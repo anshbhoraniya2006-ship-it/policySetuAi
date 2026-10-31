@@ -61,7 +61,19 @@ app.add_middleware(
 )
 
 # Mount local audio directory for direct playback
+# Mount local audio directory for direct playback
 app.mount("/static/audio", StaticFiles(directory=str(settings.AUDIO_DIR)), name="static_audio")
+
+
+@app.on_event("startup")
+async def startup_warmup():
+    """Warms up Gemini LLM SDK and database on boot to eliminate cold-start webhook latency."""
+    logger.info("Initializing and pre-warming Gemini LLM SDK & RAG models...")
+    try:
+        get_llm()
+        logger.info("Gemini LLM SDK pre-warmed successfully.")
+    except Exception as e:
+        logger.warning(f"Startup warm-up note: {e}")
 
 
 # ==============================================================================
@@ -528,7 +540,7 @@ async def adjudicate_fast_whatsapp(
     # 5. Live Agro Weather (bounded with 1.0s timeout)
     try:
         weather_task = fetch_live_agro_weather(c_lat, c_lon, district)
-        weather = await asyncio.wait_for(weather_task, timeout=1.2)
+        weather = await asyncio.wait_for(weather_task, timeout=0.8)
     except Exception:
         weather = {"recent_rainfall_10d_mm": 12.0, "rainfall_deficit_percentage": 65.0}
 
@@ -572,7 +584,7 @@ Include:
 Keep it clean, well-spaced, and easy to read on mobile.
 """
     try:
-        res = await asyncio.wait_for(llm.ainvoke(system_prompt), timeout=6.5)
+        res = await asyncio.wait_for(llm.ainvoke(system_prompt), timeout=4.0)
         raw_content = res.content
         if isinstance(raw_content, list):
             reply_text = "".join([c.get("text", "") if isinstance(c, dict) else str(c) for c in raw_content])

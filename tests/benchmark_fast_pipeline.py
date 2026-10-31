@@ -120,3 +120,4 @@ Do not repeat yourself.
 
 if __name__ == "__main__":
     asyncio.run(fast_pipeline("माझ्याकडे जालन्यात २ एकर जमीन आहे, मला दुष्काळ निधी मिळेल का?"))
+

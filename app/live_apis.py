@@ -156,7 +156,7 @@ async def find_nearest_csc(
                 },
                 "maxResultCount": 3
             }
-            async with httpx.AsyncClient(timeout=1.2) as client:
+            async with httpx.AsyncClient(timeout=0.6) as client:
                 res = await client.post(places_url, json=body, headers=headers)
                 if res.status_code == 200:
                     data = res.json()
@@ -192,7 +192,7 @@ async def find_nearest_csc(
     out center 5;
     """
     try:
-        async with httpx.AsyncClient(timeout=1.2) as client:
+        async with httpx.AsyncClient(timeout=0.6) as client:
             resp = await client.post(
                 overpass_url,
                 data={"data": overpass_query},
@@ -252,7 +252,7 @@ async def fetch_live_agro_weather(lat: float, lon: float, district_name: str = "
     }
 
     try:
-        async with httpx.AsyncClient(timeout=1.2) as client:
+        async with httpx.AsyncClient(timeout=0.6) as client:
             res = await client.get(forecast_url, params=params)
             if res.status_code == 200:
                 payload = res.json()
@@ -332,7 +332,7 @@ async def fetch_data_gov_metrics(district_name: str, state: Optional[str] = None
         "limit": 3
     }
     try:
-        async with httpx.AsyncClient(timeout=1.2) as client:
+        async with httpx.AsyncClient(timeout=0.6) as client:
             res = await client.get(url, params=params)
             if res.status_code == 200:
                 payload = res.json()
