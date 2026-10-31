@@ -255,8 +255,8 @@ async def upload_audio_to_public_storage(file_path: Path) -> str:
             mark_supabase_error(e)
             logger.debug(f"Supabase audio upload note: {e}")
 
-    # Local fallback URL served by FastAPI static route
-    base_url = settings.BASE_PUBLIC_URL.rstrip('/')
+    # Local fallback URL served by FastAPI static route (relative for portability)
+    base_url = settings.BASE_PUBLIC_URL.rstrip('/') if settings.BASE_PUBLIC_URL and "localhost" not in settings.BASE_PUBLIC_URL else ""
     return f"{base_url}/static/audio/{file_path.name}"
 
 

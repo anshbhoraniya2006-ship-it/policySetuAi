@@ -153,17 +153,51 @@ export const CitizenVoiceMirror: React.FC<CitizenVoiceMirrorProps> = ({
     }
   };
 
-  // Toggle Outbound Audio Playback
-  const togglePlayOutbound = () => {
-    if (!outboundAudioRef.current) return;
-    if (isPlayingOutbound) {
-      outboundAudioRef.current.pause();
+  const speakWithBrowser = (text?: string) => {
+    if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) {
       setIsPlayingOutbound(false);
-    } else {
-      outboundAudioRef.current.playbackRate = audioSpeed;
-      outboundAudioRef.current.play();
-      setIsPlayingOutbound(true);
+      return;
     }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = audioSpeed;
+    if (currentEvent?.language_code) {
+      utterance.lang = currentEvent.language_code;
+    }
+    utterance.onend = () => setIsPlayingOutbound(false);
+    utterance.onerror = () => setIsPlayingOutbound(false);
+    setIsPlayingOutbound(true);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // Toggle Outbound Audio Playback with Web Speech API Graceful Fallback
+  const togglePlayOutbound = () => {
+    const textToSpeak = currentEvent?.verdict?.local_language_script || currentEvent?.verdict?.english_voice_script;
+
+    if (isPlayingOutbound) {
+      if (outboundAudioRef.current) {
+        outboundAudioRef.current.pause();
+      }
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      setIsPlayingOutbound(false);
+      return;
+    }
+
+    if (outboundAudioRef.current && currentEvent?.outbound_audio_url) {
+      outboundAudioRef.current.playbackRate = audioSpeed;
+      outboundAudioRef.current.play().then(() => {
+        setIsPlayingOutbound(true);
+      }).catch((err) => {
+        console.warn("Audio file playback interrupted or unavailable, falling back to Web Speech:", err);
+        speakWithBrowser(textToSpeak);
+      });
+      return;
+    }
+
+    // Direct browser speech fallback if audio file is still loading or unavailable
+    speakWithBrowser(textToSpeak);
   };
 
   // Speed Toggle
