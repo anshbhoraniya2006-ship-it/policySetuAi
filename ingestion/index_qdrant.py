@@ -89,7 +89,11 @@ def generate_text_embedding(text: str) -> List[float]:
                 content=text,
                 task_type="retrieval_document"
             )
-            return res['embedding']
+            emb = res['embedding']
+            if len(emb) == 768:
+                return emb
+            elif len(emb) > 768:
+                return emb[:768]
         except Exception as e:
             logger.warning(f"Gemini embedding API call failed: {e}. Using local vector.")
 

@@ -133,8 +133,17 @@ async def process_voice_or_text_pipeline(
             logger.error(f"Failed to download audio from Twilio: {e}")
 
     if audio_bytes:
+        ext = "mp3" if (audio_bytes[:3] == b'ID3' or (len(audio_bytes) > 1 and audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0)) else "ogg"
+        in_file = settings.AUDIO_DIR / f"incoming_{session_id}.{ext}"
+        try:
+            with open(in_file, "wb") as f:
+                f.write(audio_bytes)
+            incoming_audio_url = f"/static/audio/{in_file.name}"
+        except Exception as e:
+            logger.warning(f"Failed to cache incoming audio: {e}")
+
         english_query, detected_lang, native_transcript = await transcribe_and_translate_audio(
-            audio_bytes, filename="citizen_audio.ogg"
+            audio_bytes, filename=f"citizen_audio.{ext}"
         )
     elif text_body:
         english_query = text_body
