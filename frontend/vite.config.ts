@@ -1,20 +1,53 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    port: 3000,
-    host: true,
-    proxy: {
-      '/api': 'http://127.0.0.1:8000',
-      '/health': 'http://127.0.0.1:8000',
-      '/webhook': 'http://127.0.0.1:8000',
-      '/test-voice': 'http://127.0.0.1:8000',
-      '/test-voice-upload': 'http://127.0.0.1:8000',
-      '/static/audio': 'http://127.0.0.1:8000',
-      '/demo': 'http://127.0.0.1:8000',
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  const backendTarget = env.VITE_BACKEND_URL || 'https://policysetuai.onrender.com'
+
+  return {
+    plugins: [react()],
+    server: {
+      port: 3000,
+      host: true,
+      proxy: {
+        '/api': {
+          target: backendTarget,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/health': {
+          target: backendTarget,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/webhook': {
+          target: backendTarget,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/test-voice': {
+          target: backendTarget,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/test-voice-upload': {
+          target: backendTarget,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/static/audio': {
+          target: backendTarget,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/demo': {
+          target: backendTarget,
+          changeOrigin: true,
+          secure: false,
+        },
+      }
     }
   }
 })
