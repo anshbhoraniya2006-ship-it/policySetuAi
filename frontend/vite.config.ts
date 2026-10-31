@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const backendUrl = env.VITE_API_BASE_URL || 'https://policysetuai.onrender.com'
+  const backendTarget = env.VITE_BACKEND_URL || env.VITE_API_BASE_URL || 'https://policysetuai.onrender.com'
 
   return {
     plugins: [react()],
@@ -13,37 +13,37 @@ export default defineConfig(({ mode }) => {
       host: true,
       proxy: {
         '/api': {
-          target: backendUrl,
+          target: backendTarget,
           changeOrigin: true,
           secure: false,
         },
         '/health': {
-          target: backendUrl,
+          target: backendTarget,
           changeOrigin: true,
           secure: false,
         },
         '/webhook': {
-          target: backendUrl,
+          target: backendTarget,
           changeOrigin: true,
           secure: false,
         },
         '/test-voice': {
-          target: backendUrl,
+          target: backendTarget,
           changeOrigin: true,
           secure: false,
         },
         '/test-voice-upload': {
-          target: backendUrl,
+          target: backendTarget,
           changeOrigin: true,
           secure: false,
         },
         '/static/audio': {
-          target: backendUrl,
+          target: backendTarget,
           changeOrigin: true,
           secure: false,
         },
         '/demo': {
-          target: backendUrl,
+          target: backendTarget,
           changeOrigin: true,
           secure: false,
         },

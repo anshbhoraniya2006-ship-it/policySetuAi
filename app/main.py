@@ -528,14 +528,14 @@ async def adjudicate_fast_whatsapp(
     # 4. Geocoding & Localized Civic Center
     from app.live_apis import get_state_civic_center_title, STATE_DEFAULT_CENTROIDS, fetch_live_agro_weather
     if lat is None or lon is None:
-        coords = STATE_DEFAULT_CENTROIDS.get(district.lower(), (19.8347, 75.8816, f"{district}, {state}"))
+        coords = STATE_DEFAULT_CENTROIDS.get(district.lower(), STATE_DEFAULT_CENTROIDS.get(state.lower(), (20.5937, 78.9629, f"{district}, {state}")))
         c_lat, c_lon, _ = coords
     else:
         c_lat, c_lon = lat, lon
 
     maps_url = f"https://www.google.com/maps/dir/?api=1&destination={c_lat},{c_lon}"
     center_title = get_state_civic_center_title(state, district)
-    csc_name = f"{center_title}, Tehsil Office, {district}"
+    csc_name = center_title if "Tehsil Office" in center_title else f"{center_title}, Tehsil Office, {district}"
 
     # 5. Live Agro Weather (bounded with 1.0s timeout)
     try:
@@ -591,36 +591,18 @@ Keep it clean, well-spaced, and easy to read on mobile.
         else:
             reply_text = str(raw_content)
     except Exception as e:
-        logger.info("Fast-path active: Dispatched verified grounded Indic entitlement breakdown in sub-3s.")
-        reply_text = (
-            f"🙏 *नमस्कार! मी PolicySetu AI, आपला शासकीय योजना सहाय्यक.*\n\n"
-            f"होय, आपण महाराष्ट्र शासनाच्या *दुष्काळ मदत निधी (इनपुट सबसिडी)* योजनेसाठी *पात्र आहात!* ✅\n\n"
-            f"📋 *योजना:* महाराष्ट्र शासन दुष्काळ सहाय्य (शासन निर्णय: SCY-2023/CR-296/M-3)\n"
-            f"💰 *अंदाजे भरपाई / Entitlement:* {entitlement_desc}\n"
-            f"🌦️ *जिल्ह्यातील पावसाची तूट:* {deficit}% (गंभीर दुष्काळ श्रेणी)\n\n"
-            f"📑 *आवश्यक ३ कागदपत्रे:*\n"
-            f"  ✅ ७/१२ व ८-अ उतारा (जमिनीची नोंद)\n"
-            f"  ✅ आधार संलग्न बँक खाते पासबुक (थेट डीबीटीसाठी)\n"
-            f"  ✅ कृषी सहाय्यक व तलाठी यांचा पीक नुकसान पंचनामा प्रत\n\n"
-            f"📍 *जवळचे सेवा केंद्र / Nearest CSC:*\n"
-            f"{csc_name}\n"
-            f"🗺️ मार्ग / Directions: {maps_url}\n\n"
-            f"शेतकरी बांधवांच्या पाठीशी शासन व PolicySetu AI सदैव तत्पर आहे! 🌱"
-        ) if is_marathi else (
-            f"🙏 *Hello from PolicySetu AI, your Government Welfare Assistant.*\n\n"
-            f"Yes, you are *ELIGIBLE* for the *Maharashtra Drought Relief Input Subsidy Scheme*! ✅\n\n"
-            f"📋 *Scheme:* Maharashtra State Drought Relief (GR: SCY-2023/CR-296/M-3)\n"
-            f"💰 *Calculated Entitlement:* {entitlement_desc}\n"
-            f"🌦️ *Rainfall Deficit in {district}:* {deficit}% (Severe Drought Threshold Met)\n\n"
-            f"📑 *Exactly 3 Required Documents:*\n"
-            f"  ✅ 7/12 and 8-A Land Title Record\n"
-            f"  ✅ Aadhaar-Seeded Bank Passbook (for direct DBT)\n"
-            f"  ✅ Joint Crop Damage Survey Panchnama\n\n"
-            f"📍 *Nearest CSC / Maha e-Seva Center:*\n"
-            f"{csc_name}\n"
-            f"🗺️ Directions (Google Maps): {maps_url}\n\n"
-            f"PolicySetu AI is committed to supporting our farmers! 🌱"
-        )
+        logger.info(f"Fast-path active: Adjudication note: {e}. Using deterministic multi-state localized template.")
+        mock_verdict = {
+            "scheme_name": scheme_title,
+            "entitlement_summary": entitlement_desc,
+            "exact_three_documents": doc_list,
+            "source_citation": source_citation
+        }
+        mock_csc = {
+            "center_name": csc_name,
+            "google_maps_url": maps_url
+        }
+        reply_text = format_whatsapp_checklist(mock_verdict, mock_csc, detected_lang)
 
     meta = {
         "session_id": session_id,
@@ -743,6 +725,19 @@ async def get_latest_telemetry(limit: int = 10):
     """Returns latest telemetry logs for the judge monitor dashboard."""
     logs = get_latest_telemetry_logs(limit=limit)
     return {"count": len(logs), "logs": logs}
+
+
+@app.get("/")
+async def root():
+    """Root endpoint welcoming users and pointing to health & interactive OpenAPI docs."""
+    return {
+        "service": "PolicySetu AI - Multilingual Policy & Scheme Explainer API",
+        "version": "2.0.0",
+        "status": "ONLINE",
+        "documentation": "/docs",
+        "health": "/health",
+        "frontend_command_center": "http://localhost:3000"
+    }
 
 
 @app.get("/health")
