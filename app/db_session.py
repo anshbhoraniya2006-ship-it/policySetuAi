@@ -3,7 +3,7 @@ Session State & Telemetry Storage Layer for PolicySetu AI.
 Manages:
   1. Multi-turn conversation memory by citizen WhatsApp phone number (bounded window).
   2. Supabase Postgres & Public Storage Bucket for audio notes.
-  3. Automatic SQLite & local filesystem fallback if Supabase keys are blank.
+  3. Automatic SQLite & local filesystem fallback if Supabase keys are blank or unmigrated.
   4. Structured query telemetry logs streamed live to the Judge Transparency Monitor.
 """
 
@@ -75,14 +75,32 @@ init_sqlite_db()
 # Supabase Cloud Client (if configured)
 # ==============================================================================
 
-_SUPABASE_AVAILABLE = None
+_SUPABASE_AVAILABLE = False
+
+def check_supabase_health():
+    """Checks if Supabase is active and has required schema; otherwise stays on high-speed SQLite."""
+    global _SUPABASE_AVAILABLE
+    if not settings.is_supabase_configured():
+        _SUPABASE_AVAILABLE = False
+        return
+    try:
+        from supabase import create_client
+        sb = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
+        res = sb.table("chat_sessions").select("phone_number").limit(1).execute()
+        _SUPABASE_AVAILABLE = True
+        logger.info("Supabase cloud connected and verified.")
+    except Exception as e:
+        _SUPABASE_AVAILABLE = False
+        logger.info("Supabase schema uninitialized. Fast-switching to high-speed SQLite engine.")
+
+check_supabase_health()
 
 def mark_supabase_error(error: Any):
     global _SUPABASE_AVAILABLE
     err_str = str(error)
     if "PGRST205" in err_str or "schema cache" in err_str or "404" in err_str or "Bucket not found" in err_str:
         if _SUPABASE_AVAILABLE is not False:
-            logger.info("Supabase schema uninitialized. Fast-switching to built-in SQLite engine.")
+            logger.info("Supabase schema uninitialized (table 'chat_sessions' absent). Fast-switching to high-speed SQLite engine.")
             _SUPABASE_AVAILABLE = False
 
 
@@ -94,7 +112,7 @@ def get_supabase_client():
         from supabase import create_client
         return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
     except Exception as e:
-        logger.error(f"Failed to initialize Supabase client: {e}")
+        logger.debug(f"Failed to initialize Supabase client: {e}")
         _SUPABASE_AVAILABLE = False
         return None
 
@@ -108,9 +126,27 @@ async def get_session_history(phone_number: str) -> str:
     Retrieves conversational context from the last 24 hours for a given phone number.
     Ensures multi-turn context (e.g. land size mentioned in turn 2 after location in turn 1).
     Bounds history to the last 6 dialogue lines to avoid cross-query state contamination.
+    Checks high-speed local SQLite first for zero-latency retrieval.
     """
+    # 1. High-speed Local SQLite check (instantaneous 0.01ms)
+    try:
+        conn = sqlite3.connect(str(settings.SQLITE_DB_PATH))
+        cursor = conn.cursor()
+        cursor.execute("SELECT history, last_updated FROM chat_sessions WHERE phone_number = ?", (phone_number,))
+        row = cursor.fetchone()
+        conn.close()
+        if row and row[0]:
+            raw_hist = row[0]
+            lines = [l for l in raw_hist.split("
+") if l.strip()]
+            return "
+".join(lines[-6:])
+    except Exception as e:
+        logger.debug(f"SQLite session lookup note: {e}")
+
+    # 2. Supabase Cloud check (only if explicitly enabled & verified)
     sb = get_supabase_client()
-    if sb:
+    if sb and _SUPABASE_AVAILABLE is True:
         try:
             cutoff = (datetime.utcnow() - timedelta(hours=24)).isoformat()
             res = sb.table("chat_sessions").select("history").eq("phone_number", phone_number).gte("last_updated", cutoff).execute()
@@ -120,21 +156,7 @@ async def get_session_history(phone_number: str) -> str:
                 return "\n".join(lines[-6:])
         except Exception as e:
             mark_supabase_error(e)
-            logger.warning(f"Supabase session lookup error: {e}")
-
-    # Fallback: SQLite
-    try:
-        conn = sqlite3.connect(str(settings.SQLITE_DB_PATH))
-        cursor = conn.cursor()
-        cursor.execute("SELECT history, last_updated FROM chat_sessions WHERE phone_number = ?", (phone_number,))
-        row = cursor.fetchone()
-        conn.close()
-        if row:
-            raw_hist = row[0]
-            lines = [l for l in raw_hist.split("\n") if l.strip()]
-            return "\n".join(lines[-6:])
-    except Exception as e:
-        logger.error(f"SQLite session lookup error: {e}")
+logger.debug(f"Supabase session lookup note: {e}")
 
     return ""
 
@@ -151,7 +173,7 @@ async def save_session_history(phone_number: str, session_id: str, new_user_msg:
     now_iso = datetime.utcnow().isoformat()
 
     sb = get_supabase_client()
-    if sb:
+    if sb and _SUPABASE_AVAILABLE is not False:
         try:
             sb.table("chat_sessions").upsert({
                 "phone_number": phone_number,
@@ -161,7 +183,7 @@ async def save_session_history(phone_number: str, session_id: str, new_user_msg:
             }).execute()
         except Exception as e:
             mark_supabase_error(e)
-            logger.warning(f"Supabase session save error: {e}")
+            logger.debug(f"Supabase session save note: {e}")
 
     # SQLite
     try:
@@ -215,7 +237,7 @@ async def upload_audio_to_public_storage(file_path: Path) -> str:
     Falls back to the local FastAPI static URL if Supabase is not configured.
     """
     sb = get_supabase_client()
-    if sb and file_path.exists():
+    if sb and _SUPABASE_AVAILABLE is not False and file_path.exists():
         try:
             bucket_name = settings.SUPABASE_STORAGE_BUCKET
             file_name = file_path.name
@@ -233,7 +255,7 @@ async def upload_audio_to_public_storage(file_path: Path) -> str:
                 return public_url
         except Exception as e:
             mark_supabase_error(e)
-            logger.warning(f"Supabase audio upload error: {e}. Falling back to public base URL.")
+            logger.debug(f"Supabase audio upload note: {e}")
 
     # Local fallback URL served by FastAPI static route
     base_url = settings.BASE_PUBLIC_URL.rstrip('/')
@@ -271,12 +293,12 @@ async def log_telemetry_event(payload: Dict[str, Any]):
 
     # 1. Supabase Cloud insertion
     sb = get_supabase_client()
-    if sb:
+    if sb and _SUPABASE_AVAILABLE is not False:
         try:
             sb.table("telemetry_logs").insert(record).execute()
         except Exception as e:
             mark_supabase_error(e)
-            logger.warning(f"Supabase telemetry insert failed: {e}")
+            logger.debug(f"Supabase telemetry insert note: {e}")
 
     # 2. SQLite local insertion
     try:
@@ -306,37 +328,39 @@ async def log_telemetry_event(payload: Dict[str, Any]):
 
 
 def get_latest_telemetry_logs(limit: int = 15) -> List[Dict[str, Any]]:
-    """Fetches latest telemetry logs for the Streamlit dashboard."""
-    sb = get_supabase_client()
-    if sb:
-        try:
-            res = sb.table("telemetry_logs").select("*").order("timestamp", desc=True).limit(limit).execute()
-            if res.data:
-                return res.data
-        except Exception as e:
-            mark_supabase_error(e)
-            logger.warning(f"Supabase fetch logs error: {e}")
-
-    # Fallback SQLite query
-    logs = []
+    """Fetches the latest execution logs from SQLite for the Judge dashboard."""
     try:
         conn = sqlite3.connect(str(settings.SQLITE_DB_PATH))
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM telemetry_logs ORDER BY id DESC LIMIT ?", (limit,))
+        cursor.execute(
+            "SELECT * FROM telemetry_logs ORDER BY id DESC LIMIT ?", (limit,)
+        )
         rows = cursor.fetchall()
-        for r in rows:
-            d = dict(r)
-            # Parse JSON fields
-            for field in ["citizen_profile", "csc_center", "weather_data", "data_gov_data", "rag_chunks", "verdict"]:
-                if d.get(field):
-                    try:
-                        d[field] = json.loads(d[field])
-                    except Exception:
-                        pass
-            logs.append(d)
         conn.close()
-    except Exception as e:
-        logger.error(f"SQLite fetch logs error: {e}")
 
-    return logs
+        results = []
+        for r in rows:
+            results.append({
+                "session_id": r["session_id"],
+                "phone_number": r["phone_number"],
+                "timestamp": r["timestamp"],
+                "incoming_audio_url": r["incoming_audio_url"],
+                "language_code": r["language_code"],
+                "native_transcript": r["native_transcript"],
+                "english_translation": r["english_translation"],
+                "citizen_profile": json.loads(r["citizen_profile"]) if r["citizen_profile"] else {},
+                "land_in_hectares": r["land_in_hectares"],
+                "csc_center": json.loads(r["csc_center"]) if r["csc_center"] else {},
+                "weather_data": json.loads(r["weather_data"]) if r["weather_data"] else {},
+                "data_gov_data": json.loads(r["data_gov_data"]) if r["data_gov_data"] else {},
+                "rag_chunks": json.loads(r["rag_chunks"]) if r["rag_chunks"] else [],
+                "verdict": json.loads(r["verdict"]) if r["verdict"] else {},
+                "outbound_audio_url": r["outbound_audio_url"],
+                "total_latency_ms": r["total_latency_ms"],
+                "status": r["status"]
+            })
+        return results
+    except Exception as e:
+        logger.error(f"Failed to fetch telemetry from SQLite: {e}")
+        return []

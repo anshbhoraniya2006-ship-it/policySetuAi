@@ -89,13 +89,19 @@ async def geocode_location(
         lat, lon, name = STATE_DEFAULT_CENTROIDS.get(loc, STATE_DEFAULT_CENTROIDS["maharashtra"])
         return lat, lon, name
 
+    # Instant zero-latency centroid lookup for known districts
+    key = district_or_village.strip().lower()
+    if key in STATE_DEFAULT_CENTROIDS:
+        lat, lon, name = STATE_DEFAULT_CENTROIDS[key]
+        return lat, lon, name
+
     query = f"{district_or_village}, {state}, India" if state else f"{district_or_village}, India"
     url = "https://nominatim.openstreetmap.org/search"
     headers = {"User-Agent": "PolicySetuAI-LaunchpadHackathon/1.0 (contact: hackathon@policysetu.ai)"}
     params = {"q": query, "format": "json", "limit": 1, "addressdetails": 1}
 
     try:
-        async with httpx.AsyncClient(timeout=4.0) as client:
+        async with httpx.AsyncClient(timeout=1.5) as client:
             response = await client.get(url, params=params, headers=headers)
             if response.status_code == 200:
                 data = response.json()
@@ -150,7 +156,7 @@ async def find_nearest_csc(
                 },
                 "maxResultCount": 3
             }
-            async with httpx.AsyncClient(timeout=4.0) as client:
+            async with httpx.AsyncClient(timeout=1.2) as client:
                 res = await client.post(places_url, json=body, headers=headers)
                 if res.status_code == 200:
                     data = res.json()
@@ -186,7 +192,7 @@ async def find_nearest_csc(
     out center 5;
     """
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=1.2) as client:
             resp = await client.post(
                 overpass_url,
                 data={"data": overpass_query},
@@ -246,7 +252,7 @@ async def fetch_live_agro_weather(lat: float, lon: float, district_name: str = "
     }
 
     try:
-        async with httpx.AsyncClient(timeout=4.0) as client:
+        async with httpx.AsyncClient(timeout=1.2) as client:
             res = await client.get(forecast_url, params=params)
             if res.status_code == 200:
                 payload = res.json()
@@ -326,7 +332,7 @@ async def fetch_data_gov_metrics(district_name: str, state: Optional[str] = None
         "limit": 3
     }
     try:
-        async with httpx.AsyncClient(timeout=4.0) as client:
+        async with httpx.AsyncClient(timeout=1.2) as client:
             res = await client.get(url, params=params)
             if res.status_code == 200:
                 payload = res.json()

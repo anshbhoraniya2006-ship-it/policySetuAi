@@ -86,23 +86,42 @@ nxtwave/
 ├── README.md                # Master documentation & defense cheat sheet
 │
 ├── app/                     # Core FastAPI Live WhatsApp Backend
-│   ├── main.py              # Entrypoint, /webhook/whatsapp, /test-voice, background workers
+│   ├── __init__.py          # Application package initialization
+│   ├── main.py              # Entrypoint, /webhook/whatsapp, /test-voice, /api/ingest/*, background workers
 │   ├── config.py            # Typed Pydantic Settings & validation
+│   ├── ingest_service.py    # Table-preserving markdown extraction & Qdrant upsert engine
 │   ├── unit_converter.py    # Deterministic Acre / Guntha / Bigha -> Hectare math
 │   ├── live_apis.py         # Async clients: OpenStreetMap Overpass, Open-Meteo, Data.gov.in
 │   ├── rag_chains.py        # LangChain LCEL chains (CitizenProfile & SchemeVerdict)
 │   ├── speech.py            # Sarvam Saaras (STT), Bulbul (TTS), ffmpeg OGG Opus encoder
 │   └── db_session.py        # Supabase 24h memory + telemetry (with local SQLite fallback)
 │
+├── frontend/                # React 19 + TypeScript + Vite + Tailwind CSS Command Center
+│   ├── src/
+│   │   ├── components/      # UI Modular Components
+│   │   │   ├── CitizenVoiceMirror.tsx   # Tab 1 Left: Voice Note bubble & console
+│   │   │   ├── RAGPipelineInspector.tsx # Tab 1 Center: 6-stage trace & RRF citations
+│   │   │   ├── LiveProofAndGIS.tsx      # Tab 1 Right: Live Open-Meteo weather & CSC GIS locator
+│   │   │   ├── MandateIngestionView.tsx # Tab 2: Live Mandate Ingestion & Qdrant Indexer
+│   │   │   ├── MarkdownTableRenderer.tsx# Preserved Markdown Table Visualizer
+│   │   │   └── Navbar.tsx               # DPI Tricolor header & view switcher
+│   │   ├── services/api.ts  # REST client for FastAPI endpoints
+│   │   └── types/index.ts   # Canonical TypeScript data contracts
+│   ├── vite.config.ts       # Reverse proxy to FastAPI port 8000
+│   └── package.json         # React 19, Lucide, Framer Motion dependencies
+│
 ├── ingestion/               # Live Government Mandate Ingestion Pipeline
+│   ├── __init__.py          # Ingestion package initialization
 │   ├── fetch_gov_sources.py # Live fetcher for myScheme.gov.in & State GR PDFs
 │   ├── parse_documents.py   # Table-aware PDF parser (pymupdf4llm / Sarvam Vision)
 │   └── index_qdrant.py      # Qdrant Hybrid (Dense + Sparse) vector indexer & retriever
 │
 ├── dashboard/               # Live Judge Transparency & Telemetry Monitor
+│   ├── __init__.py          # Dashboard package initialization
 │   └── monitor.py           # Streamlit real-time dashboard proving Rule 4 compliance
 │
 ├── tests/                   # Verification Test Suite
+│   ├── __init__.py          # Test package initialization
 │   └── test_pipeline.py     # Automated end-to-end tests for all 5 subsystems
 │
 └── data/                    # Local storage (telemetry.db, audio cache, documents)

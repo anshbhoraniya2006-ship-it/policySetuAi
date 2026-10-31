@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # --- WhatsApp Gateway (Twilio) ---
     TWILIO_ACCOUNT_SID: Optional[str] = None
     TWILIO_AUTH_TOKEN: Optional[str] = None
-    TWILIO_WHATSAPP_NUMBER: str = "whatsapp:+14155238886"
+    TWILIO_WHATSAPP_NUMBER: str = "whatsapp:+17372508034"
 
     # --- Indic Speech & Translation (Sarvam AI) ---
     SARVAM_API_KEY: Optional[str] = None
