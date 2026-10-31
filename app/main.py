@@ -528,14 +528,14 @@ async def adjudicate_fast_whatsapp(
     # 4. Geocoding & Localized Civic Center
     from app.live_apis import get_state_civic_center_title, STATE_DEFAULT_CENTROIDS, fetch_live_agro_weather
     if lat is None or lon is None:
-        coords = STATE_DEFAULT_CENTROIDS.get(district.lower(), (19.8347, 75.8816, f"{district}, {state}"))
+        coords = STATE_DEFAULT_CENTROIDS.get(district.lower(), STATE_DEFAULT_CENTROIDS.get(state.lower(), (20.5937, 78.9629, f"{district}, {state}")))
         c_lat, c_lon, _ = coords
     else:
         c_lat, c_lon = lat, lon
 
     maps_url = f"https://www.google.com/maps/dir/?api=1&destination={c_lat},{c_lon}"
     center_title = get_state_civic_center_title(state, district)
-    csc_name = f"{center_title}, Tehsil Office, {district}"
+    csc_name = center_title if "Tehsil Office" in center_title else f"{center_title}, Tehsil Office, {district}"
 
     # 5. Live Agro Weather (bounded with 1.0s timeout)
     try:
