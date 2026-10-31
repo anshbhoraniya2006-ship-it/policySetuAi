@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+data/telemetry.db
+data/audio/*.wav
+data/audio/*.ogg
+.git
+.gitignore
+.env
+.pytest_cache/
+.DS_Store

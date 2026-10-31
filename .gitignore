@@ -1,0 +1,61 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment Variables & Secrets (CRITICAL)
+.env
+.env.*
+!.env.example
+
+# Local Databases, Vector Store, & Telemetry
+data/telemetry.db
+data/telemetry.db-journal
+data/qdrant_db/
+data/audio/*
+!data/audio/.gitkeep
+data/storage/*
+!data/storage/.gitkeep
+
+# Large Ingested Binaries (keep markdown summaries)
+data/documents/*.pdf
+
+# Logs & Runtime
+*.log
+logs/
+
+# IDE & OS Specific
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+ehthumbs.db

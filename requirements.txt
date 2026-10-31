@@ -1,0 +1,36 @@
+# Core Web & API Framework
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+python-multipart>=0.0.9
+python-dotenv>=1.0.1
+httpx>=0.27.0
+requests>=2.32.0
+
+# WhatsApp Gateway
+twilio>=9.1.0
+
+# LLM & RAG Orchestration
+langchain>=0.2.6
+langchain-core>=0.2.10
+langchain-community>=0.2.6
+langchain-google-genai>=1.0.7
+google-generativeai>=0.7.2
+
+# Vector Database & Embeddings
+qdrant-client>=1.9.2
+fastembed>=0.3.1
+
+# Document Ingestion & Table-Aware PDF Parsing
+pymupdf>=1.24.5
+pymupdf4llm>=0.0.14
+
+# Database & Telemetry Storage
+supabase>=2.5.1
+
+# Transparency Dashboard & GIS Visualization
+streamlit>=1.36.0
+streamlit-autorefresh>=1.0.1
+folium>=0.17.0
+streamlit-folium>=0.20.0
