@@ -8,8 +8,10 @@ Provides:
 """
 
 import asyncio
+import html
 import json
 import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -76,7 +78,7 @@ st.markdown("""
     }
     .wa-topbar {
         background-color: #202c33;
-        padding: 12px 18px;
+        padding: 14px 20px;
         display: flex;
         align-items: center;
         border-bottom: 1px solid #2a3942;
@@ -95,52 +97,36 @@ st.markdown("""
     .wa-user-bubble {
         background-color: #005c4b;
         color: #e9edef;
-        padding: 10px 14px;
-        border-radius: 12px 0 12px 12px;
-        margin: 10px 0;
+        padding: 12px 16px;
+        border-radius: 14px 0 14px 14px;
+        margin: 12px 0;
         max-width: 82%;
         margin-left: auto;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         line-height: 1.45;
+        font-size: 1rem;
     }
     .wa-bot-bubble {
         background-color: #202c33;
         color: #e9edef;
-        padding: 12px 16px;
-        border-radius: 0 12px 12px 12px;
-        margin: 10px 0;
+        padding: 14px 18px;
+        border-radius: 0 14px 14px 14px;
+        margin: 12px 0;
         max-width: 85%;
         margin-right: auto;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.3);
-        border-left: 3px solid #00a884;
-        line-height: 1.45;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        border-left: 4px solid #00a884;
+        line-height: 1.5;
+        font-size: 1rem;
     }
     .wa-timestamp {
-        font-size: 0.7rem;
+        font-size: 0.72rem;
         color: rgba(233, 237, 239, 0.6);
         text-align: right;
-        margin-top: 4px;
-    }
-    .wa-chip {
-        display: inline-block;
-        background: #202c33;
-        border: 1px solid #00a884;
-        color: #e9edef;
-        padding: 6px 12px;
-        border-radius: 20px;
-        font-size: 0.85rem;
-        margin: 4px;
-        cursor: pointer;
+        margin-top: 6px;
     }
 </style>
 """, unsafe_allow_html=True)
-
-# Auto-refresh interval (for live judge monitoring)
-try:
-    from streamlit_autorefresh import st_autorefresh
-    st_autorefresh(interval=5000, key="telemetry_autorefresh")
-except Exception:
-    pass
 
 # Initialize session state for WhatsApp chat
 if "wa_chat_history" not in st.session_state:
@@ -149,8 +135,7 @@ if "wa_chat_history" not in st.session_state:
             "role": "bot",
             "time": "Just now",
             "text": "🇮🇳 *नमस्कार! मी पॉलिसी-सेतू AI आहे.*\n\nआपल्या शेतातील जमीन, दुष्काळ भरपाई, पीक विमा (PMFBY), किंवा MSME कर्जाबाबत प्रश्न विचारा किंवा व्हॉइस नोट पाठवा. मी शासकीय नियमावलीनुसार अचूक माहिती देईन.",
-            "audio_url": None,
-            "checklist": None
+            "audio_url": None
         }
     ]
 
@@ -186,7 +171,7 @@ with st.sidebar:
     status_pill(settings.is_sarvam_configured(), "Sarvam AI (Saaras + Bulbul)")
     status_pill(settings.is_gemini_configured(), "Google Gemini LLM")
     status_pill(settings.is_qdrant_configured(), "Qdrant Hybrid Vector Store")
-    status_pill(settings.is_supabase_configured(), "Supabase Session Store")
+    status_pill(settings.is_supabase_configured(), "Supabase Cloud Store")
     status_pill(True, "Open-Meteo Meteorological (Key-Free)")
     status_pill(True, "OpenStreetMap Overpass GIS (Key-Free)")
     status_pill(bool(settings.DATA_GOV_IN_API_KEY), "Data.gov.in Official REST")
@@ -212,7 +197,7 @@ with tab_wa:
     st.subheader("WhatsApp Web Citizen Simulator")
     st.caption("Interact directly in Marathi, Hindi, Telugu, Gujarati, or English. Test text or voice note uploads without consuming Twilio trial message limits.")
 
-    # WhatsApp Phone Screen Frame
+    # WhatsApp Phone Screen Top Bar
     st.markdown("""
         <div class="wa-card">
             <div class="wa-topbar">
@@ -225,101 +210,54 @@ with tab_wa:
         </div>
     """, unsafe_allow_html=True)
 
-    # Render Conversation History
-    for msg in st.session_state.wa_chat_history:
-        if msg["role"] == "user":
-            st.markdown(f"""
-                <div class="wa-user-bubble">
-                    {msg["text"]}
-                    <div class="wa-timestamp">{msg.get("time", "12:00 PM")} <span style="color:#53bdeb;">✓✓</span></div>
-                </div>
-            """, unsafe_allow_html=True)
-        else:
-            # Bot Bubble Part 1: Voice Note / Spoken Script
-            if msg.get("audio_url"):
-                st.markdown(f"""
-                    <div class="wa-bot-bubble">
-                        <b>🎙️ व्हॉइस नोट / Voice Note Reply (Bulbul V4 Flash):</b>
-                        <div class="wa-timestamp">{msg.get("time", "12:00 PM")}</div>
-                    </div>
-                """, unsafe_allow_html=True)
-                audio_path = msg["audio_url"]
-                if audio_path.startswith("/static/audio/"):
-                    local_f = settings.AUDIO_DIR / Path(audio_path).name
-                    if local_f.exists():
-                        st.audio(str(local_f))
-                else:
-                    st.audio(audio_path)
+    # Quick Suggestion Preset Buttons
+    st.markdown("**⚡ Quick Example Prompts (Click to ask instantly):**")
+    chip_c1, chip_c2, chip_c3 = st.columns(3)
+    if chip_c1.button("🌾 Marathi: जालन्यात २ एकर दुष्काळ निधी?"):
+        st.session_state.pending_query = "माझ्याकडे जालन्यात २ एकर जमीन आहे, मला दुष्काळ निधी मिळेल का?"
+    if chip_c2.button("🚜 Hindi: 3 बीघा जमीन पर फसल नुकसान?"):
+        st.session_state.pending_query = "मेरे पास 3 बीघा जमीन है, क्या मुझे सूखा राहत योजना का लाभ मिलेगा?"
+    if chip_c3.button("🏭 English: MSME Collateral-Free Loan?"):
+        st.session_state.pending_query = "I run a small fabrication workshop in Pune, how to get collateral-free loan under CGTMSE?"
 
-            # Bot Bubble Part 2: Formatted Vernacular Checklist
-            st.markdown(f"""
-                <div class="wa-bot-bubble">
-                    <pre style="white-space: pre-wrap; font-family: inherit; margin: 0; color: #e9edef; background: transparent; border: none; font-size: 0.95rem;">{msg["text"]}</pre>
-                    <div class="wa-timestamp">{msg.get("time", "12:00 PM")}</div>
-                </div>
-            """, unsafe_allow_html=True)
+    # Optional Voice Note File Upload
+    with st.expander("🎙️ Upload WhatsApp Voice Note (.ogg, .wav, .mp3)", expanded=False):
+        uploaded_voice = st.file_uploader("Select audio file:", type=["ogg", "wav", "mp3"], key="wa_voice_uploader")
+        if uploaded_voice and st.button("Process Uploaded Voice Note 🚀"):
+            st.session_state.pending_audio = uploaded_voice
 
-    st.markdown("---")
+    # Chat Input Box
+    user_typed = st.chat_input("Type your message in Marathi, Hindi, English, etc. and press Enter...")
+    if user_typed:
+        st.session_state.pending_query = user_typed
 
-    # Quick Suggestion Chips
-    st.markdown("**⚡ Quick Example Prompts (Click to test):**")
-    chip_col1, chip_col2, chip_col3 = st.columns(3)
-    preset_query = None
-    with chip_col1:
-        if st.button("🌾 Marathi: जालन्यात २ एकर दुष्काळ निधी?"):
-            preset_query = "माझ्याकडे जालन्यात २ एकर जमीन आहे, मला दुष्काळ निधी मिळेल का?"
-    with chip_col2:
-        if st.button("🚜 Hindi: 3 बीघा जमीन पर फसल नुकसान?"):
-            preset_query = "मेरे पास 3 बीघा जमीन है, क्या मुझे सूखा राहत योजना का लाभ मिलेगा?"
-    with chip_col3:
-        if st.button("🏭 English: MSME Collateral-Free Loan?"):
-            preset_query = "I run a small fabrication workshop in Pune, how to get collateral-free loan under CGTMSE?"
+    # Auto-heal: If an orphan user message exists in history without bot reply, re-queue it
+    if st.session_state.wa_chat_history and st.session_state.wa_chat_history[-1]["role"] == "user":
+        if "pending_query" not in st.session_state:
+            st.session_state.pending_query = st.session_state.wa_chat_history[-1]["text"]
+            st.session_state.wa_chat_history.pop()
 
-    # Input Form
-    with st.form("wa_input_form", clear_on_submit=True):
-        user_input = st.text_input(
-            "Type your query in Marathi, Hindi, English, etc.:",
-            value=preset_query or "",
-            placeholder="e.g. माझ्याकडे जालन्यात २ एकर जमीन आहे, दुष्काळ निधी मिळेल का?"
-        )
-        audio_file = st.file_uploader("Or upload recorded WhatsApp voice note (.ogg, .wav, .mp3):", type=["ogg", "wav", "mp3"])
-        
-        btn_c1, btn_c2 = st.columns([1, 5])
-        with btn_c1:
-            submitted = st.form_submit_button("Send 📤", type="primary")
-        with btn_c2:
-            clear_btn = st.form_submit_button("Clear Chat 🗑️")
+    # Process Pending Query or Audio
+    if st.session_state.get("pending_query") or st.session_state.get("pending_audio"):
+        query_text = st.session_state.pop("pending_query", None)
+        audio_file = st.session_state.pop("pending_audio", None)
 
-    if clear_btn:
-        st.session_state.wa_chat_history = [
-            {
-                "role": "bot",
-                "time": "Just now",
-                "text": "Chat reset. Please ask your welfare scheme or crop loss question.",
-                "audio_url": None
-            }
-        ]
-        st.rerun()
-
-    query_to_run = user_input or preset_query
-    if (submitted and (query_to_run or audio_file)) or preset_query:
         now_str = datetime.now().strftime("%I:%M %p")
+        disp_text = query_text if query_text else f"🎙️ [Voice Note: {audio_file.name}]"
         
-        # User message
-        display_text = query_to_run if query_to_run else f"🎙️ [Voice Note: {audio_file.name}]"
+        # Append User Message
         st.session_state.wa_chat_history.append({
             "role": "user",
             "time": now_str,
-            "text": display_text
+            "text": disp_text
         })
 
         with st.spinner("🤖 PolicySetu AI is analyzing official government resolutions & live satellite telemetry..."):
             audio_bytes = audio_file.read() if audio_file else None
             
-            # Execute pipeline
             result = asyncio.run(process_voice_or_text_pipeline(
                 sender_phone="whatsapp:+919876543210",
-                text_body=query_to_run if not audio_bytes else None,
+                text_body=query_text if not audio_bytes else None,
                 audio_bytes=audio_bytes
             ))
 
@@ -327,7 +265,7 @@ with tab_wa:
             csc = result.get("csc_center", {})
             out_audio = result.get("outbound_audio_url")
 
-            # Format WhatsApp Checklist
+            # Formatted WhatsApp Checklist
             checklist_reply = (
                 f"📋 *{verdict.get('scheme_name', 'Government Welfare Scheme')}*\n"
                 f"💰 *अंदाजे भरपाई / Entitlement:* {verdict.get('entitlement_summary', 'Applicable')}\n\n"
@@ -339,13 +277,63 @@ with tab_wa:
             checklist_reply += f"🗺️ *Directions:* {csc.get('google_maps_url', 'https://maps.google.com')}\n"
             checklist_reply += f"📜 *Citation:* {verdict.get('source_citation', 'Official Government Resolution')}"
 
+            # Append Bot Message
             st.session_state.wa_chat_history.append({
                 "role": "bot",
                 "time": datetime.now().strftime("%I:%M %p"),
                 "text": checklist_reply,
                 "audio_url": out_audio
             })
-            st.rerun()
+
+    # Render All Messages
+    for msg in st.session_state.wa_chat_history:
+        if msg["role"] == "user":
+            user_escaped = html.escape(msg.get("text", "")).replace("\n", "<br>")
+            st.markdown(f"""
+                <div class="wa-user-bubble">
+                    {user_escaped}
+                    <div class="wa-timestamp">{msg.get("time", "Just now")} <span style="color:#53bdeb;">✓✓</span></div>
+                </div>
+            """, unsafe_allow_html=True)
+        else:
+            # Bot Bubble Part 1: Voice Note Reply (if audio exists)
+            if msg.get("audio_url"):
+                st.markdown(f"""
+                    <div class="wa-bot-bubble" style="margin-bottom: 6px;">
+                        <b>🎙️ व्हॉइस नोट / Voice Note Reply (Bulbul V4 Flash):</b>
+                        <div class="wa-timestamp">{msg.get("time", "Just now")}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+                audio_path = msg["audio_url"]
+                filename = Path(audio_path).name
+                local_f = settings.AUDIO_DIR / filename
+                if local_f.exists():
+                    st.audio(str(local_f), format="audio/ogg")
+                else:
+                    st.audio(audio_path)
+
+            # Bot Bubble Part 2: Formatted Vernacular Checklist
+            raw_bot = html.escape(msg.get("text", ""))
+            # Convert *bold text* to <b>bold text</b>
+            formatted_bot = re.sub(r'\*(.*?)\*', r'<b>\1</b>', raw_bot).replace("\n", "<br>")
+            st.markdown(f"""
+                <div class="wa-bot-bubble">
+                    <div style="line-height: 1.6; font-size: 0.95rem;">{formatted_bot}</div>
+                    <div class="wa-timestamp">{msg.get("time", "Just now")}</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+    # Clear Chat Button
+    if st.button("Clear Chat 🗑️", key="btn_clear_chat"):
+        st.session_state.wa_chat_history = [
+            {
+                "role": "bot",
+                "time": "Just now",
+                "text": "🇮🇳 *नमस्कार! मी पॉलिसी-सेतू AI आहे.*\n\nआपल्या शेतातील जमीन, दुष्काळ भरपाई, पीक विमा (PMFBY), किंवा MSME कर्जाबाबत प्रश्न विचारा किंवा व्हॉइस नोट पाठवा. मी शासकीय नियमावलीनुसार अचूक माहिती देईन.",
+                "audio_url": None
+            }
+        ]
+        st.rerun()
 
 # ==============================================================================
 # TAB 2: Real-Time Telemetry & Judge Monitor (Rule 4 Proof)
