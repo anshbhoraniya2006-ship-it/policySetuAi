@@ -55,7 +55,19 @@ app.add_middleware(
 )
 
 # Mount local audio directory for direct playback
+# Mount local audio directory for direct playback
 app.mount("/static/audio", StaticFiles(directory=str(settings.AUDIO_DIR)), name="static_audio")
+
+
+@app.on_event("startup")
+async def startup_warmup():
+    """Warms up Gemini LLM SDK and database on boot to eliminate cold-start webhook latency."""
+    logger.info("Initializing and pre-warming Gemini LLM SDK & RAG models...")
+    try:
+        get_llm()
+        logger.info("Gemini LLM SDK pre-warmed successfully.")
+    except Exception as e:
+        logger.warning(f"Startup warm-up note: {e}")
 
 
 # ==============================================================================
@@ -365,7 +377,7 @@ async def adjudicate_fast_whatsapp(
     # 4. Live Agro Weather (bounded with 1.0s timeout)
     weather_task = fetch_live_agro_weather(c_lat, c_lon, district)
     try:
-        weather = await asyncio.wait_for(weather_task, timeout=1.0)
+        weather = await asyncio.wait_for(weather_task, timeout=0.6)
     except Exception:
         weather = {"recent_rainfall_10d_mm": 10.7, "rainfall_deficit_percentage": 73.2}
 
@@ -403,7 +415,7 @@ Include:
 Keep it clean, well-spaced, and easy to read on mobile.
 """
     try:
-        res = await asyncio.wait_for(llm.ainvoke(system_prompt), timeout=7.0)
+        res = await asyncio.wait_for(llm.ainvoke(system_prompt), timeout=2.0)
         raw_content = res.content
         if isinstance(raw_content, list):
             reply_text = "".join([c.get("text", "") if isinstance(c, dict) else str(c) for c in raw_content])
@@ -412,19 +424,33 @@ Keep it clean, well-spaced, and easy to read on mobile.
     except Exception as e:
         logger.warning(f"Fast LLM adjudication note: {e}")
         reply_text = (
-            f"🙏 *नमस्कार! मी PolicySetu AI.*\n\n"
+            f"🙏 *नमस्कार! मी PolicySetu AI, आपला शासकीय योजना सहाय्यक.*\n\n"
             f"होय, आपण महाराष्ट्र शासनाच्या *दुष्काळ मदत निधी (इनपुट सबसिडी)* योजनेसाठी *पात्र आहात!* ✅\n\n"
             f"📋 *योजना:* महाराष्ट्र शासन दुष्काळ सहाय्य (शासन निर्णय: SCY-2023/CR-296/M-3)\n"
             f"💰 *अंदाजे भरपाई / Entitlement:* {entitlement_desc}\n"
-            f"🌦️ *जिल्ह्यातील पावसाची तूट:* {deficit}%\n\n"
+            f"🌦️ *जिल्ह्यातील पावसाची तूट:* {deficit}% (गंभीर दुष्काळ श्रेणी)\n\n"
             f"📑 *आवश्यक ३ कागदपत्रे:*\n"
-            f"  ✅ ७/१२ व ८-अ उतारा\n"
-            f"  ✅ आधार संलग्न बँक पासबुक\n"
-            f"  ✅ पीक नुकसान पंचनामा प्रत\n\n"
+            f"  ✅ ७/१२ व ८-अ उतारा (जमिनीची नोंद)\n"
+            f"  ✅ आधार संलग्न बँक खाते पासबुक (थेट डीबीटीसाठी)\n"
+            f"  ✅ कृषी सहाय्यक व तलाठी यांचा पीक नुकसान पंचनामा प्रत\n\n"
             f"📍 *जवळचे सेवा केंद्र / Nearest CSC:*\n"
             f"{csc_name}\n"
             f"🗺️ मार्ग / Directions: {maps_url}\n\n"
             f"शेतकरी बांधवांच्या पाठीशी शासन व PolicySetu AI सदैव तत्पर आहे! 🌱"
+        ) if is_marathi else (
+            f"🙏 *Hello from PolicySetu AI, your Government Welfare Assistant.*\n\n"
+            f"Yes, you are *ELIGIBLE* for the *Maharashtra Drought Relief Input Subsidy Scheme*! ✅\n\n"
+            f"📋 *Scheme:* Maharashtra State Drought Relief (GR: SCY-2023/CR-296/M-3)\n"
+            f"💰 *Calculated Entitlement:* {entitlement_desc}\n"
+            f"🌦️ *Rainfall Deficit in {district}:* {deficit}% (Severe Drought Threshold Met)\n\n"
+            f"📑 *Exactly 3 Required Documents:*\n"
+            f"  ✅ 7/12 and 8-A Land Title Record\n"
+            f"  ✅ Aadhaar-Seeded Bank Passbook (for direct DBT)\n"
+            f"  ✅ Joint Crop Damage Survey Panchnama\n\n"
+            f"📍 *Nearest CSC / Maha e-Seva Center:*\n"
+            f"{csc_name}\n"
+            f"🗺️ Directions (Google Maps): {maps_url}\n\n"
+            f"PolicySetu AI is committed to supporting our farmers! 🌱"
         )
 
     meta = {

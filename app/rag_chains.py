@@ -87,8 +87,13 @@ class SchemeVerdict(BaseModel):
 # 2. LLM Initialization & Chain Construction
 # ==============================================================================
 
+_CACHED_LLM = None
+
 def get_llm():
-    """Initializes Google Gemini model via LangChain with zero temperature."""
+    """Initializes Google Gemini model via LangChain with zero temperature and persistent singleton caching."""
+    global _CACHED_LLM
+    if _CACHED_LLM is not None:
+        return _CACHED_LLM
     if not settings.is_gemini_configured():
         return None
     try:
@@ -102,7 +107,8 @@ def get_llm():
         # Avoid fixed sampling default UserWarning for gemini-3.5-flash-lite
         if "3.5" not in str(settings.GEMINI_MODEL):
             kwargs["temperature"] = 0.0
-        return ChatGoogleGenerativeAI(**kwargs)
+        _CACHED_LLM = ChatGoogleGenerativeAI(**kwargs)
+        return _CACHED_LLM
     except Exception as e:
         logger.error(f"Failed to instantiate ChatGoogleGenerativeAI: {e}")
         return None
