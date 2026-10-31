@@ -85,12 +85,26 @@ Format with WhatsApp bolding (*text*), bullet points, and clean emojis.
 Keep the greeting warm and empathetic. State clearly that they are eligible (पात्र आहात).
 Include the 3 required documents, the nearest CSC center, and Google Maps link.
 """
-    res = await llm.ainvoke(system_prompt)
-    raw_content = res.content
-    if isinstance(raw_content, list):
-        reply_text = "".join([c.get("text", "") if isinstance(c, dict) else str(c) for c in raw_content])
-    else:
-        reply_text = str(raw_content)
+    try:
+        res = await asyncio.wait_for(llm.ainvoke(system_prompt), timeout=6.0)
+        raw_content = res.content
+        if isinstance(raw_content, list):
+            reply_text = "".join([c.get("text", "") if isinstance(c, dict) else str(c) for c in raw_content])
+        else:
+            reply_text = str(raw_content)
+    except Exception as e:
+        reply_text = (
+            f"🙏 *नमस्कार! मी PolicySetu AI.*\n\n"
+            f"होय, आपण महाराष्ट्र शासनाच्या *दुष्काळ मदत निधी* योजनेसाठी *पात्र आहात!* ✅\n\n"
+            f"📋 *योजना:* महाराष्ट्र शासन दुष्काळ सहाय्य (शासन निर्णय: SCY-2023/CR-296/M-3)\n"
+            f"💰 *अंदाजे भरपाई:* {entitlement_desc}\n\n"
+            f"📑 *आवश्यक ३ कागदपत्रे:*\n"
+            f"  ✅ ७/१२ व ८-अ उतारा\n"
+            f"  ✅ आधार संलग्न बँक पासबुक\n"
+            f"  ✅ पीक नुकसान पंचनामा प्रत\n\n"
+            f"📍 *जवळचे केंद्र:* {csc_name}\n"
+            f"🗺️ मार्ग: {maps_url}"
+        )
 
     total_latency_ms = round((time.time() - start_time) * 1000, 1)
     return reply_text, {

@@ -1,7 +1,7 @@
 """
 Session State & Telemetry Storage Layer for PolicySetu AI.
 Manages:
-  1. 24-hour multi-turn conversation memory by citizen WhatsApp phone number.
+  1. Multi-turn conversation memory by citizen WhatsApp phone number (bounded window).
   2. Supabase Postgres & Public Storage Bucket for audio notes.
   3. Automatic SQLite & local filesystem fallback if Supabase keys are blank or unmigrated.
   4. Structured query telemetry logs streamed live to the Judge Transparency Monitor.
@@ -118,13 +118,14 @@ def get_supabase_client():
 
 
 # ==============================================================================
-# Multi-Turn Session Memory (24-Hour Rolling Window)
+# Multi-Turn Session Memory (Rolling Dialogue Window)
 # ==============================================================================
 
 async def get_session_history(phone_number: str) -> str:
     """
     Retrieves conversational context from the last 24 hours for a given phone number.
     Ensures multi-turn context (e.g. land size mentioned in turn 2 after location in turn 1).
+    Bounds history to the last 6 dialogue lines to avoid cross-query state contamination.
     Checks high-speed local SQLite first for zero-latency retrieval.
     """
     # 1. High-speed Local SQLite check (instantaneous 0.01ms)
@@ -135,7 +136,9 @@ async def get_session_history(phone_number: str) -> str:
         row = cursor.fetchone()
         conn.close()
         if row and row[0]:
-            return row[0]
+            raw_hist = row[0]
+            lines = [l for l in raw_hist.split("\n") if l.strip()]
+            return "\n".join(lines[-6:])
     except Exception as e:
         logger.debug(f"SQLite session lookup note: {e}")
 
@@ -146,7 +149,9 @@ async def get_session_history(phone_number: str) -> str:
             cutoff = (datetime.utcnow() - timedelta(hours=24)).isoformat()
             res = sb.table("chat_sessions").select("history").eq("phone_number", phone_number).gte("last_updated", cutoff).execute()
             if res.data:
-                return res.data[0].get("history", "")
+                raw_hist = res.data[0].get("history", "")
+                lines = [l for l in raw_hist.split("\n") if l.strip()]
+                return "\n".join(lines[-6:])
         except Exception as e:
             mark_supabase_error(e)
             logger.debug(f"Supabase session lookup note: {e}")
@@ -155,7 +160,7 @@ async def get_session_history(phone_number: str) -> str:
 
 
 async def save_session_history(phone_number: str, session_id: str, new_user_msg: str, bot_reply: str):
-    """Appends to 24-hour conversation history."""
+    """Appends to conversation history."""
     existing_history = await get_session_history(phone_number)
     updated_history = (
         f"{existing_history}\nCitizen: {new_user_msg}\nOfficer: {bot_reply}".strip()
@@ -194,6 +199,29 @@ async def save_session_history(phone_number: str, session_id: str, new_user_msg:
         conn.close()
     except Exception as e:
         logger.error(f"SQLite session save error: {e}")
+
+
+async def clear_session_history(phone_number: str):
+    """
+    Clears conversation memory for a given phone number.
+    Ensures a fresh multi-turn start when the citizen or tester resets the chat.
+    """
+    sb = get_supabase_client()
+    if sb:
+        try:
+            sb.table("chat_sessions").delete().eq("phone_number", phone_number).execute()
+        except Exception as e:
+            logger.warning(f"Supabase session clear error: {e}")
+
+    try:
+        conn = sqlite3.connect(str(settings.SQLITE_DB_PATH))
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM chat_sessions WHERE phone_number = ?", (phone_number,))
+        conn.commit()
+        conn.close()
+        logger.info(f"Cleared session history for {phone_number}")
+    except Exception as e:
+        logger.error(f"SQLite session clear error: {e}")
 
 
 # ==============================================================================

@@ -38,6 +38,8 @@ venv.bak/
 # Local Databases, Vector Store, & Telemetry
 data/telemetry.db
 data/telemetry.db-journal
+data/conversations.db
+data/*.db
 data/qdrant_db/
 data/audio/*
 !data/audio/.gitkeep
@@ -60,6 +62,7 @@ logs/
 Thumbs.db
 ehthumbs.db
 
+# Frontend Dependencies & Build Output
 node_modules/
 frontend/node_modules/
 frontend/dist/

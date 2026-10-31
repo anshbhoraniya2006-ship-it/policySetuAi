@@ -4,7 +4,7 @@ Strictly implements:
   - MarkdownHeaderTextSplitter & RecursiveCharacterTextSplitter.
   - Rich Payload Metadata (state, sector, source_url, scheme_name).
   - Qdrant Cloud cluster integration with local disk/memory fallback (Zero-Config).
-  - Hybrid retrieval with state & sector metadata filtering.
+  - Multi-state retrieval with state & sector metadata filtering across all 9 supported states.
 """
 
 import asyncio
@@ -30,6 +30,19 @@ logger = logging.getLogger("policysetu.ingestion.qdrant")
 logger.setLevel(logging.INFO)
 
 COLLECTION_NAME = settings.QDRANT_COLLECTION_NAME
+
+STATE_ALIASES = {
+    "up": "Uttar Pradesh", "uttar pradesh": "Uttar Pradesh",
+    "mp": "Madhya Pradesh", "madhya pradesh": "Madhya Pradesh",
+    "mh": "Maharashtra", "maharashtra": "Maharashtra",
+    "gj": "Gujarat", "gujarat": "Gujarat",
+    "ts": "Telangana", "telangana": "Telangana", "tg": "Telangana",
+    "ka": "Karnataka", "karnataka": "Karnataka",
+    "br": "Bihar", "bihar": "Bihar",
+    "pb": "Punjab", "punjab": "Punjab",
+    "hr": "Haryana", "haryana": "Haryana",
+    "all_india": "All_India"
+}
 
 
 # ==============================================================================
@@ -77,28 +90,27 @@ def get_qdrant_client() -> QdrantClient:
 def generate_text_embedding(text: str) -> List[float]:
     """
     Generates dense vector embeddings.
-    Uses Google Gemini text-embedding-004 if configured,
+    Uses Google GenAI SDK if configured,
     otherwise uses a fast deterministic embedding vector so local mode never fails.
     """
     if settings.is_gemini_configured():
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            res = genai.embed_content(
+            from google import genai
+            client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            res = client.models.embed_content(
                 model=settings.GEMINI_EMBEDDING_MODEL,
-                content=text,
-                task_type="retrieval_document"
+                contents=text
             )
-            emb = res['embedding']
-            if len(emb) == 768:
-                return emb
-            elif len(emb) > 768:
-                return emb[:768]
+            if hasattr(res, "embeddings") and res.embeddings:
+                emb = res.embeddings[0].values
+                if len(emb) == 768:
+                    return emb
+                elif len(emb) > 768:
+                    return emb[:768]
         except Exception as e:
-            logger.warning(f"Gemini embedding API call failed: {e}. Using local vector.")
+            logger.warning(f"Gemini embedding API call failed: {e}. Using deterministic local vector.")
 
     # High-dimensional deterministic pseudo-semantic vector (768 dimensions)
-    # Allows end-to-end tests to pass even before API keys are plugged in
     dim = 768
     vector = [0.0] * dim
     words = text.lower().split()
@@ -192,12 +204,12 @@ def build_or_recreate_collection(client: QdrantClient, vector_size: int = 768):
 async def ingest_live_schemes_to_qdrant() -> int:
     """
     End-to-end Ingestion Pipeline (Runs on Startup / Scheduled Sync):
-    1. Fetches live mandate documents from .gov.in sources.
+    1. Fetches live mandate documents from .gov.in sources across all supported states.
     2. Parses table layouts into structured Markdown.
     3. Chunks with headers and extracts metadata.
     4. Computes embeddings and upserts to Qdrant.
     """
-    logger.info("Starting live government scheme ingestion into Qdrant...")
+    logger.info("Starting live government scheme ingestion into Qdrant across all states...")
     mandates = await fetch_and_save_mandates()
 
     client = get_qdrant_client()
@@ -214,7 +226,7 @@ async def ingest_live_schemes_to_qdrant() -> int:
             continue
 
         chunks = chunk_markdown_mandate(content, mandate)
-        logger.info(f"Generated {len(chunks)} table-preserved chunks for '{mandate['scheme_name']}'")
+        logger.info(f"Generated {len(chunks)} table-preserved chunks for '{mandate['scheme_name']}' ({mandate['state']})")
 
         for c in chunks:
             vector = generate_text_embedding(c["text"])
@@ -248,7 +260,7 @@ async def ingest_live_schemes_to_qdrant() -> int:
 
 async def query_qdrant_mandates(
     query: str,
-    state: Optional[str] = "Maharashtra",
+    state: Optional[str] = None,
     sector: Optional[str] = "drought_relief",
     limit: int = 4
 ) -> List[Dict[str, Any]]:
@@ -261,27 +273,33 @@ async def query_qdrant_mandates(
     client = get_qdrant_client()
     query_vector = generate_text_embedding(query)
 
-    # Build strict metadata filter
-    must_conditions = []
-    allowed_states = ["All_India"]
+    # Normalize state name to canonical form
+    canonical_state = None
     if state:
-        allowed_states.append(state)
+        st_clean = state.strip().lower()
+        canonical_state = STATE_ALIASES.get(st_clean, state.title())
 
-    must_conditions.append(
-        models.FieldCondition(
-            key="state",
-            match=models.MatchAny(any=allowed_states)
-        )
-    )
-    if sector and sector != "general_welfare":
-        must_conditions.append(
+    allowed_states = ["All_India"]
+    if canonical_state and canonical_state != "All_India":
+        allowed_states.append(canonical_state)
+
+    def build_filter(states_list: List[str], sec: Optional[str]) -> models.Filter:
+        musts = [
             models.FieldCondition(
-                key="sector",
-                match=models.MatchValue(value=sector)
+                key="state",
+                match=models.MatchAny(any=states_list)
             )
-        )
+        ]
+        if sec and sec != "general_welfare":
+            musts.append(
+                models.FieldCondition(
+                    key="sector",
+                    match=models.MatchValue(value=sec)
+                )
+            )
+        return models.Filter(must=musts)
 
-    filter_obj = models.Filter(must=must_conditions) if must_conditions else None
+    filter_obj = build_filter(allowed_states, sector)
 
     def execute_search(c: QdrantClient, q_vec: List[float], f_obj: Any, lim: int):
         if hasattr(c, "query_points"):
@@ -314,6 +332,23 @@ async def query_qdrant_mandates(
             })
         if results:
             return results
+
+        # If zero results with sector filter, try relaxing sector filter
+        relaxed_filter = build_filter(allowed_states, sec=None)
+        relaxed_results = execute_search(client, query_vector, relaxed_filter, limit)
+        if relaxed_results:
+            return [
+                {
+                    "score": round(hit.score, 4),
+                    "scheme_name": hit.payload.get("scheme_name", ""),
+                    "header": hit.payload.get("header", ""),
+                    "content": hit.payload.get("text", ""),
+                    "state": hit.payload.get("state", ""),
+                    "sector": hit.payload.get("sector", ""),
+                    "source_url": hit.payload.get("source_url", ""),
+                }
+                for hit in relaxed_results
+            ]
     except Exception as e:
         logger.warning(f"Qdrant query failed: {e}. Ingesting documents now...")
 
