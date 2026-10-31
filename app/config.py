@@ -30,8 +30,8 @@ class Settings(BaseSettings):
 
     # --- LLM Orchestration & Embeddings (Google Gemini) ---
     GEMINI_API_KEY: Optional[str] = None
-    GEMINI_MODEL: str = "gemini-2.5-flash"
-    GEMINI_EMBEDDING_MODEL: str = "models/text-embedding-004"
+    GEMINI_MODEL: str = "gemini-3.5-flash-lite"
+    GEMINI_EMBEDDING_MODEL: str = "models/gemini-embedding-001"
 
     # --- Live Vector Store (Qdrant) ---
     QDRANT_URL: Optional[str] = None

@@ -260,16 +260,21 @@ async def log_telemetry_event(payload: Dict[str, Any]):
         logger.error(f"SQLite telemetry insert failed: {e}")
 
 
+_SUPABASE_TELEMETRY_AVAILABLE = True
+
 def get_latest_telemetry_logs(limit: int = 15) -> List[Dict[str, Any]]:
     """Fetches latest telemetry logs for the Streamlit dashboard."""
-    sb = get_supabase_client()
-    if sb:
-        try:
-            res = sb.table("telemetry_logs").select("*").order("timestamp", desc=True).limit(limit).execute()
-            if res.data:
-                return res.data
-        except Exception as e:
-            logger.warning(f"Supabase fetch logs error: {e}")
+    global _SUPABASE_TELEMETRY_AVAILABLE
+    if _SUPABASE_TELEMETRY_AVAILABLE:
+        sb = get_supabase_client()
+        if sb:
+            try:
+                res = sb.table("telemetry_logs").select("*").order("timestamp", desc=True).limit(limit).execute()
+                if res.data:
+                    return res.data
+            except Exception as e:
+                logger.warning(f"Supabase fetch logs error: {e}. Falling back to SQLite.")
+                _SUPABASE_TELEMETRY_AVAILABLE = False
 
     # Fallback SQLite query
     logs = []

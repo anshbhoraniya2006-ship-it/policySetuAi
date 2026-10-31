@@ -94,7 +94,9 @@ def get_llm():
         return ChatGoogleGenerativeAI(
             model=settings.GEMINI_MODEL,
             google_api_key=settings.GEMINI_API_KEY,
-            temperature=0.0
+            temperature=0.0,
+            max_retries=1,
+            timeout=10.0
         )
     except Exception as e:
         logger.error(f"Failed to instantiate ChatGoogleGenerativeAI: {e}")
