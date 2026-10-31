@@ -283,6 +283,7 @@ async def process_voice_or_text_pipeline(
 # ==============================================================================
 
 @app.post("/webhook/whatsapp")
+@app.post("/webhook/whatsap")
 async def twilio_whatsapp_webhook(
     background_tasks: BackgroundTasks,
     request: Request,
@@ -293,30 +294,69 @@ async def twilio_whatsapp_webhook(
     Longitude: Optional[float] = Form(None)
 ):
     """
-    Sub-second non-blocking WhatsApp Webhook receiver.
-    Returns HTTP 200 immediately to prevent Twilio timeouts,
-    dispatches instant status message, and runs pipeline in background.
+    Dual-mode WhatsApp Webhook receiver:
+    - Direct in-session TwiML reply (avoids Twilio ContentSid Error 21654).
+    - Returns media_type='text/xml' (avoids Twilio Error 12300).
+    - Handles both /webhook/whatsapp and typo /webhook/whatsap.
     """
     logger.info(f"Received WhatsApp webhook from {From} | Audio: {bool(MediaUrl0)} | Text: {Body} | GPS: {Latitude},{Longitude}")
+    from twilio.twiml.messaging_response import MessagingResponse
+    resp = MessagingResponse()
 
-    # Immediately acknowledge citizen
-    ack_text = "🔍 Checking official government schemes and live meteorological records for you..."
-    send_twilio_message(From, body=ack_text)
+    try:
+        # Run pipeline synchronously within 11.5s to reply directly inside Twilio's 15s window
+        telemetry = await asyncio.wait_for(
+            process_voice_or_text_pipeline(
+                sender_phone=From,
+                media_url=MediaUrl0,
+                text_body=Body,
+                lat=Latitude,
+                lon=Longitude
+            ),
+            timeout=11.5
+        )
+        verdict = telemetry.get("verdict", {})
+        csc_center = telemetry.get("csc_center", {})
+        docs_checklist = "\n".join([f"  ✅ {doc}" for doc in verdict.get("exact_three_documents", [])])
+        maps_link = csc_center.get("google_maps_url", "https://maps.google.com")
+        center_name = csc_center.get("center_name", "Nearest Maha e-Seva Kendra")
 
-    # Dispatch full RAG and voice pipeline to background tasks
-    background_tasks.add_task(
-        process_voice_or_text_pipeline,
-        sender_phone=From,
-        media_url=MediaUrl0,
-        text_body=Body,
-        lat=Latitude,
-        lon=Longitude
-    )
+        if verdict.get("status") == "AWAITING_FOLLOW_UP":
+            reply_text = f"❓ {verdict.get('question', 'Could you please specify your land size and district?')}"
+        else:
+            reply_text = (
+                f"📋 *{verdict.get('scheme_name', 'Government Scheme')}*\n"
+                f"💰 *अंदाजे भरपाई / Entitlement:* {verdict.get('entitlement_summary', 'N/A')}\n\n"
+                f"📑 *आवश्यक ३ कागदपत्रे / 3 Required Documents:*\n"
+                f"{docs_checklist}\n\n"
+                f"📍 *जवळचे सेवा केंद्र / Nearest CSC:*\n"
+                f"{center_name}\n\n"
+                f"🗺️ मार्ग / Directions: {maps_link}\n\n"
+                f"📜 *शासन निर्णय / Source Citation:* {verdict.get('source_citation', 'Official Government Resolution')}"
+            )
+        msg = resp.message(reply_text)
+        outbound_audio = telemetry.get("outbound_audio_url")
+        if outbound_audio and str(outbound_audio).startswith("http"):
+            msg.media(str(outbound_audio))
 
-    # Return instant HTTP 200 OK with TwiML empty response
+    except asyncio.TimeoutError:
+        logger.warning("Pipeline exceeded 11.5s; sending acknowledgment and completing in background")
+        resp.message("🔍 Checking official government schemes and live meteorological records for you...")
+        background_tasks.add_task(
+            process_voice_or_text_pipeline,
+            sender_phone=From,
+            media_url=MediaUrl0,
+            text_body=Body,
+            lat=Latitude,
+            lon=Longitude
+        )
+    except Exception as e:
+        logger.error(f"Error processing webhook: {e}")
+        resp.message("🙏 धन्यवाद! सरकारी योजनेची माहिती तपासली जात आहे. कृपया थोड्या वेळाने पुन्हा प्रयत्न करा.")
+
     return Response(
-        content="<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>",
-        media_type="application/xml"
+        content=str(resp),
+        media_type="text/xml"
     )
 
 
