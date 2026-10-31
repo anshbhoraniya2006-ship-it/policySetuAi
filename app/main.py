@@ -727,6 +727,19 @@ async def get_latest_telemetry(limit: int = 10):
     return {"count": len(logs), "logs": logs}
 
 
+@app.get("/")
+async def root():
+    """Root endpoint welcoming users and pointing to health & interactive OpenAPI docs."""
+    return {
+        "service": "PolicySetu AI - Multilingual Policy & Scheme Explainer API",
+        "version": "2.0.0",
+        "status": "ONLINE",
+        "documentation": "/docs",
+        "health": "/health",
+        "frontend_command_center": "http://localhost:3000"
+    }
+
+
 @app.get("/health")
 async def health_check():
     """Healthcheck endpoint detailing status of all connected services."""
