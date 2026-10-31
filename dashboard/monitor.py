@@ -197,7 +197,7 @@ with tab_wa:
     st.subheader("WhatsApp Web Citizen Simulator")
     st.caption("Interact directly in Marathi, Hindi, Telugu, Gujarati, or English. Test text or voice note uploads without consuming Twilio trial message limits.")
 
-    # WhatsApp Phone Screen Top Bar
+    # 1. WhatsApp Top Bar
     st.markdown("""
         <div class="wa-card">
             <div class="wa-topbar">
@@ -210,34 +210,13 @@ with tab_wa:
         </div>
     """, unsafe_allow_html=True)
 
-    # Quick Suggestion Preset Buttons
-    st.markdown("**⚡ Quick Example Prompts (Click to ask instantly):**")
-    chip_c1, chip_c2, chip_c3 = st.columns(3)
-    if chip_c1.button("🌾 Marathi: जालन्यात २ एकर दुष्काळ निधी?"):
-        st.session_state.pending_query = "माझ्याकडे जालन्यात २ एकर जमीन आहे, मला दुष्काळ निधी मिळेल का?"
-    if chip_c2.button("🚜 Hindi: 3 बीघा जमीन पर फसल नुकसान?"):
-        st.session_state.pending_query = "मेरे पास 3 बीघा जमीन है, क्या मुझे सूखा राहत योजना का लाभ मिलेगा?"
-    if chip_c3.button("🏭 English: MSME Collateral-Free Loan?"):
-        st.session_state.pending_query = "I run a small fabrication workshop in Pune, how to get collateral-free loan under CGTMSE?"
-
-    # Optional Voice Note File Upload
-    with st.expander("🎙️ Upload WhatsApp Voice Note (.ogg, .wav, .mp3)", expanded=False):
-        uploaded_voice = st.file_uploader("Select audio file:", type=["ogg", "wav", "mp3"], key="wa_voice_uploader")
-        if uploaded_voice and st.button("Process Uploaded Voice Note 🚀"):
-            st.session_state.pending_audio = uploaded_voice
-
-    # Chat Input Box
-    user_typed = st.chat_input("Type your message in Marathi, Hindi, English, etc. and press Enter...")
-    if user_typed:
-        st.session_state.pending_query = user_typed
-
-    # Auto-heal: If an orphan user message exists in history without bot reply, re-queue it
+    # 2. Auto-heal: If an orphan user message exists in history without bot reply, re-queue it
     if st.session_state.wa_chat_history and st.session_state.wa_chat_history[-1]["role"] == "user":
         if "pending_query" not in st.session_state:
-            st.session_state.pending_query = st.session_state.wa_chat_history[-1]["text"]
-            st.session_state.wa_chat_history.pop()
+            orphan_msg = st.session_state.wa_chat_history.pop()
+            st.session_state.pending_query = orphan_msg["text"]
 
-    # Process Pending Query or Audio
+    # 3. Process Pending Query or Audio
     if st.session_state.get("pending_query") or st.session_state.get("pending_audio"):
         query_text = st.session_state.pop("pending_query", None)
         audio_file = st.session_state.pop("pending_audio", None)
@@ -285,7 +264,7 @@ with tab_wa:
                 "audio_url": out_audio
             })
 
-    # Render All Messages
+    # 4. Render Conversation Messages (in authentic WhatsApp chat stream)
     for msg in st.session_state.wa_chat_history:
         if msg["role"] == "user":
             user_escaped = html.escape(msg.get("text", "")).replace("\n", "<br>")
@@ -314,7 +293,6 @@ with tab_wa:
 
             # Bot Bubble Part 2: Formatted Vernacular Checklist
             raw_bot = html.escape(msg.get("text", ""))
-            # Convert *bold text* to <b>bold text</b>
             formatted_bot = re.sub(r'\*(.*?)\*', r'<b>\1</b>', raw_bot).replace("\n", "<br>")
             st.markdown(f"""
                 <div class="wa-bot-bubble">
@@ -323,7 +301,35 @@ with tab_wa:
                 </div>
             """, unsafe_allow_html=True)
 
-    # Clear Chat Button
+    st.markdown("<hr style='border-color: rgba(255,255,255,0.08); margin: 24px 0 16px 0;'>", unsafe_allow_html=True)
+
+    # 5. Quick Suggestion Preset Buttons
+    st.markdown("**⚡ Quick Example Prompts (Click to ask instantly):**")
+    chip_c1, chip_c2, chip_c3 = st.columns(3)
+    if chip_c1.button("🌾 Marathi: जालन्यात २ एकर दुष्काळ निधी?", key="btn_marathi"):
+        st.session_state.pending_query = "माझ्याकडे जालन्यात २ एकर जमीन आहे, मला दुष्काळ निधी मिळेल का?"
+        st.rerun()
+    if chip_c2.button("🚜 Hindi: 3 बीघा जमीन पर फसल नुकसान?", key="btn_hindi"):
+        st.session_state.pending_query = "मेरे पास 3 बीघा जमीन है, क्या मुझे सूखा राहत योजना का लाभ मिलेगा?"
+        st.rerun()
+    if chip_c3.button("🏭 English: MSME Collateral-Free Loan?", key="btn_msme"):
+        st.session_state.pending_query = "I run a small fabrication workshop in Pune, how to get collateral-free loan under CGTMSE?"
+        st.rerun()
+
+    # 6. Optional Voice Note File Upload
+    with st.expander("🎙️ Upload WhatsApp Voice Note (.ogg, .wav, .mp3)", expanded=False):
+        uploaded_voice = st.file_uploader("Select audio file:", type=["ogg", "wav", "mp3"], key="wa_voice_uploader")
+        if uploaded_voice and st.button("Process Uploaded Voice Note 🚀", key="btn_upload_voice"):
+            st.session_state.pending_audio = uploaded_voice
+            st.rerun()
+
+    # 7. Chat Input Box (pinned at bottom)
+    user_typed = st.chat_input("Type your message in Marathi, Hindi, English, etc. and press Enter...")
+    if user_typed:
+        st.session_state.pending_query = user_typed
+        st.rerun()
+
+    # 8. Clear Chat Button
     if st.button("Clear Chat 🗑️", key="btn_clear_chat"):
         st.session_state.wa_chat_history = [
             {
