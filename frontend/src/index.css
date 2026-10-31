@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 font-sans antialiased;
+  }
+}
+
+/* India DPI Tricolor Subtle Top Hairline */
+.dpi-tricolor-hairline {
+  height: 3px;
+  width: 100%;
+  background: linear-gradient(90deg, #FF9933 0%, #FF9933 33.3%, #FFFFFF 33.3%, #FFFFFF 66.6%, #138808 66.6%, #138808 100%);
+}
+
+/* Indic Script Clean Line Height for Marathi/Hindi/Telugu/Gujarati */
+.font-indic {
+  font-family: 'Noto Sans Devanagari', Mukta, system-ui, sans-serif;
+  line-height: 1.65;
+}
+
+/* Custom Scrollbar for Chat Stream and JSON Drawer */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+.dark-scrollbar::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+.dark-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Audio Waveform Animation */
+@keyframes audio-pulse {
+  0%, 100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.animate-audio-bar {
+  animation: audio-pulse 1s ease-in-out infinite alternate;
+}

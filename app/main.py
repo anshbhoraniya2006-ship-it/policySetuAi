@@ -383,6 +383,63 @@ async def health_check():
     }
 
 
+# ==============================================================================
+# Tab 2: Live Mandate Ingestion & Qdrant Cloud Indexer Endpoints
+# ==============================================================================
+
+class IngestUrlRequest(BaseModel):
+    url: str
+    state: str = "All India"
+    sector: str = "Agriculture"
+    scheme_name: Optional[str] = None
+
+
+@app.get("/api/qdrant/stats")
+async def get_qdrant_stats_endpoint():
+    """Returns live collection statistics from Qdrant Cloud cluster."""
+    from app.ingest_service import get_qdrant_stats
+    return get_qdrant_stats()
+
+
+@app.post("/api/ingest/url")
+async def ingest_url_endpoint(payload: IngestUrlRequest):
+    """
+    Ingests official .gov.in PDF or myScheme URL, parses markdown tables,
+    chunks with MarkdownHeaderTextSplitter semantics, and upserts to Qdrant.
+    """
+    from app.ingest_service import ingest_url_source
+    res = await ingest_url_source(
+        url=payload.url,
+        state=payload.state,
+        sector=payload.sector,
+        scheme_name=payload.scheme_name
+    )
+    return res
+
+
+@app.post("/api/ingest/pdf")
+async def ingest_pdf_endpoint(
+    file: UploadFile = File(...),
+    state: str = Form("All India"),
+    sector: str = Form("Agriculture"),
+    scheme_name: Optional[str] = Form(None)
+):
+    """
+    Uploads official Government Resolution PDF, performs table-aware OCR/layout parsing,
+    and indexes vector chunks into Qdrant Cloud cluster.
+    """
+    from app.ingest_service import ingest_pdf_file
+    content = await file.read()
+    res = await ingest_pdf_file(
+        file_bytes=content,
+        filename=file.filename or "uploaded_mandate.pdf",
+        state=state,
+        sector=sector,
+        scheme_name=scheme_name
+    )
+    return res
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app.main:app", host=settings.APP_HOST, port=settings.APP_PORT, reload=True)
