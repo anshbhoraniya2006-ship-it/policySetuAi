@@ -3,7 +3,7 @@ Live Public API Client Layer for PolicySetu AI.
 Strictly complies with Hackathon Rule 4 ("No Dummy Data: Hardcoded JSON files or static
 mock datasets are strictly prohibited").
 Consumes live, real-time public APIs concurrently via asyncio.gather:
-  1. OpenStreetMap Nominatim + Overpass API (CSC & e-Seva Kendra Locator)
+  1. OpenStreetMap Nominatim + Overpass API (CSC & State e-Seva Kendra Locator)
   2. Open-Meteo Live & Historical Meteorological Telemetry
   3. Data.gov.in REST Open Data API
 """
@@ -25,10 +25,55 @@ STATE_DEFAULT_CENTROIDS = {
     "aurangabad": (19.8762, 75.3433, "Chhatrapati Sambhajinagar, Maharashtra"),
     "solapur": (17.6599, 75.9064, "Solapur, Maharashtra"),
     "gujarat": (22.2587, 71.1924, "Gujarat Central"),
+    "jamnagar": (22.4707, 70.0577, "Jamnagar, Gujarat"),
+    "rajkot": (22.3039, 70.8022, "Rajkot, Gujarat"),
+    "telangana": (17.8749, 78.1008, "Telangana Central"),
+    "warangal": (17.9689, 79.5941, "Warangal, Telangana"),
+    "karimnagar": (18.4386, 79.1288, "Karimnagar, Telangana"),
     "karnataka": (15.3173, 75.7139, "Karnataka Central"),
+    "belagavi": (15.8497, 74.4977, "Belagavi, Karnataka"),
+    "dharwad": (15.4589, 75.0078, "Dharwad, Karnataka"),
     "madhya pradesh": (22.9734, 78.6569, "Madhya Pradesh Central"),
+    "ujjain": (23.1765, 75.7885, "Ujjain, Madhya Pradesh"),
+    "indore": (22.7196, 75.8577, "Indore, Madhya Pradesh"),
+    "uttar pradesh": (26.8467, 80.9462, "Uttar Pradesh Central"),
+    "gorakhpur": (26.7606, 83.3732, "Gorakhpur, Uttar Pradesh"),
+    "varanasi": (25.3176, 82.9739, "Varanasi, Uttar Pradesh"),
+    "bihar": (25.0961, 85.3131, "Bihar Central"),
+    "muzaffarpur": (26.1209, 85.3647, "Muzaffarpur, Bihar"),
+    "gaya": (24.7914, 85.0002, "Gaya, Bihar"),
+    "punjab": (31.1471, 75.3412, "Punjab Central"),
+    "ludhiana": (30.9010, 75.8573, "Ludhiana, Punjab"),
+    "bathinda": (30.2110, 74.9455, "Bathinda, Punjab"),
+    "haryana": (29.0588, 76.0856, "Haryana Central"),
+    "sirsa": (29.5349, 75.0298, "Sirsa, Haryana"),
+    "hisar": (29.1492, 75.7217, "Hisar, Haryana"),
     "all_india": (20.5937, 78.9629, "India Central"),
 }
+
+# Official state-specific civic delivery & e-Seva Kendra naming
+STATE_CIVIC_CENTERS = {
+    "maharashtra": "Maha e-Seva / Setu Suvidha Kendra",
+    "gujarat": "Jan Seva Kendra / e-Gram (VCE) Kendra",
+    "telangana": "MeeSeva Kendra / Rythu Vedika",
+    "karnataka": "Grama One / Karnataka One Kendra",
+    "madhya pradesh": "MPOnline Kiosk / CSC Digital Seva",
+    "uttar pradesh": "Jan Seva Kendra (जन सेवा केंद्र) / e-District",
+    "bihar": "Vasudha Kendra (वसुधा केंद्र) / RTPS Counter",
+    "punjab": "Sewa Kendra (ਸੇਵਾ ਕੇਂਦਰ)",
+    "haryana": "Antyodaya Saral Kendra / Atal Seva Kendra",
+}
+
+
+def get_state_civic_center_title(state: Optional[str], district_or_village: str) -> str:
+    """Returns canonical official citizen service center title tailored to state administration."""
+    if not state:
+        return f"Common Service Centre (CSC) - Tehsil Complex, {district_or_village}"
+    st_lower = state.strip().lower()
+    for key, title in STATE_CIVIC_CENTERS.items():
+        if key in st_lower:
+            return f"{title}, Tehsil Office, {district_or_village}"
+    return f"Common Service Centre (CSC) - Tehsil Complex, {district_or_village}"
 
 
 async def geocode_location(
@@ -79,10 +124,13 @@ async def find_nearest_csc(
     state: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Finds the nearest Common Service Centre (CSC), Maha e-Seva Kendra,
-    or Tehsildar / Talathi revenue office near the citizen's location.
+    Finds the nearest Common Service Centre (CSC) or state-specific civic portal office
+    (MeeSeva, Grama One, Jan Seva Kendra, Sewa Kendra, Vasudha Kendra, Maha e-Seva).
     Queries Google Places API (New) if key exists, otherwise live OpenStreetMap Overpass API.
     """
+    center_label = get_state_civic_center_title(state, district_or_village)
+    st_name = state or "India"
+
     # 1. Option A: Google Places API (New) Text Search if API key is present
     if settings.GOOGLE_PLACES_API_KEY:
         try:
@@ -93,7 +141,7 @@ async def find_nearest_csc(
                 "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.location"
             }
             body = {
-                "textQuery": f"Common Service Centre OR Maha e-Seva Kendra near {district_or_village} {state or ''}",
+                "textQuery": f"{center_label} OR Common Service Centre near {district_or_village} {state or ''}",
                 "locationBias": {
                     "circle": {
                         "center": {"latitude": lat, "longitude": lon},
@@ -111,7 +159,7 @@ async def find_nearest_csc(
                         top = places[0]
                         p_lat = top.get("location", {}).get("latitude", lat)
                         p_lon = top.get("location", {}).get("longitude", lon)
-                        name = top.get("displayName", {}).get("text", "Maha e-Seva Kendra")
+                        name = top.get("displayName", {}).get("text", center_label)
                         address = top.get("formattedAddress", f"Near Tehsil Office, {district_or_village}")
                         maps_url = f"https://www.google.com/maps/dir/?api=1&destination={p_lat},{p_lon}"
                         return {
@@ -127,7 +175,6 @@ async def find_nearest_csc(
 
     # 2. Option B: OpenStreetMap Overpass API (100% Free, Zero Key, Rule 4 Compliant)
     overpass_url = "https://overpass-api.de/api/interpreter"
-    # Search within 15km radius (15,000 meters) around citizen's lat,lon
     overpass_query = f"""
     [out:json][timeout:5];
     (
@@ -155,13 +202,13 @@ async def find_nearest_csc(
                     name = (
                         tags.get("name")
                         or tags.get("description")
-                        or f"Maha e-Seva Kendra / Tehsil Office ({district_or_village})"
+                        or f"{center_label} ({district_or_village})"
                     )
                     street = tags.get("addr:street") or tags.get("addr:city") or f"Main Road, {district_or_village}"
                     maps_url = f"https://www.google.com/maps/dir/?api=1&destination={c_lat},{c_lon}"
                     return {
                         "center_name": name,
-                        "address": f"{name}, {street}, {state or 'Maharashtra'}",
+                        "address": f"{name}, {street}, {st_name}",
                         "latitude": float(c_lat),
                         "longitude": float(c_lon),
                         "google_maps_url": maps_url,
@@ -172,13 +219,9 @@ async def find_nearest_csc(
 
     # Grounded official municipal / revenue center fallback using live coordinates
     maps_url = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
-    center_title = (
-        f"Maha e-Seva / Setu Suvidha Kendra, Tehsil Office, {district_or_village}"
-        if (state and "maha" in state.lower()) else f"Common Service Centre (CSC) - Tehsil Complex, {district_or_village}"
-    )
     return {
-        "center_name": center_title,
-        "address": f"Tehsil Compound, Near District Collectorate, {district_or_village}, {state or 'Maharashtra'}",
+        "center_name": center_label,
+        "address": f"Tehsil Compound, Near District Collectorate, {district_or_village}, {st_name}",
         "latitude": lat,
         "longitude": lon,
         "google_maps_url": maps_url,
@@ -215,7 +258,7 @@ async def fetch_live_agro_weather(lat: float, lon: float, district_name: str = "
                 total_rainfall_10d = round(sum(precip_list), 2)
                 avg_temp = round(sum(temp_max_list) / max(len(temp_max_list), 1), 1)
 
-                # Drought heuristic: Kharif normal 10-day rainfall in Marathwada/Vidarbha is ~35-50mm.
+                # Drought heuristic: Kharif normal 10-day rainfall in dryland clusters is ~35-50mm.
                 # If 10-day rainfall < 15mm, triggers severe rainfall deficit criteria.
                 expected_baseline_10d = 40.0
                 deficit_pct = round(((expected_baseline_10d - total_rainfall_10d) / expected_baseline_10d) * 100, 1)
@@ -275,7 +318,6 @@ async def fetch_data_gov_metrics(district_name: str, state: Optional[str] = None
             "verified_open_data": True
         }
 
-    # Example endpoint: Ministry of Agriculture and Farmers Welfare open catalog
     url = "https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070"
     params = {
         "api-key": settings.DATA_GOV_IN_API_KEY,
@@ -316,13 +358,11 @@ async def fetch_all_live_context(
     Executes all live public API calls concurrently via asyncio.gather.
     Keeps total retrieval latency bounded under ~1.2 seconds.
     """
-    # 1. Geocode if coordinates not directly supplied from WhatsApp location pin
     if lat is None or lon is None:
         lat, lon, place_name = await geocode_location(district_or_village, state)
     else:
         place_name = f"Coordinates ({lat:.4f}, {lon:.4f})"
 
-    # 2. Concurrently dispatch CSC lookup, Weather API, and Data.gov.in
     csc_task = find_nearest_csc(lat, lon, district_or_village, state)
     weather_task = fetch_live_agro_weather(lat, lon, district_or_village)
     data_gov_task = fetch_data_gov_metrics(district_or_village, state)

@@ -147,7 +147,12 @@ if "wa_chat_history" not in st.session_state:
         {
             "role": "bot",
             "time": "Just now",
-            "text": "🇮🇳 *नमस्कार! मी पॉलिसी-सेतू AI आहे.*\n\nआपल्या शेतातील जमीन, दुष्काळ भरपाई, पीक विमा (PMFBY), किंवा MSME कर्जाबाबत प्रश्न विचारा किंवा व्हॉइस नोट पाठवा. मी शासकीय नियमावलीनुसार अचूक माहिती देईन.",
+            "text": (
+                "🇮🇳 *Namaste! Welcome to PolicySetu AI (पॉलिसी-सेतू / పాలసీ-సేతు / ಪಾಲಿಸಿ-ಸೇತು)*\n\n"
+                "Ask questions in your regional language (**Telugu, Kannada, Hindi, Marathi, Gujarati, Punjabi, English**) "
+                "about agricultural calamity relief, drought subsidies, land records (Pahani, Pattadar, 7/12, Khasra, Jamabandi), or MSME credit.\n\n"
+                "I verify official state resolutions, live satellite rainfall from Open-Meteo, and guide you with direct Google Maps navigation to your nearest local civic center (MeeSeva, Grama One, MPOnline, Jan Seva, Sewa Kendra, Maha e-Seva)."
+            ),
             "audio_url": None
         }
     ]
@@ -283,7 +288,7 @@ with st.sidebar:
             st.info("👉 Detailed telemetry & maps are updated in Tab 2.")
 
     else:
-        sim_query = st.text_input("Simulate Citizen Query:", value="माझ्याकडे जालन्यात २ एकर जमीन आहे, मला दुष्काळ निधी मिळेल का?", key="txt_query")
+        sim_query = st.text_input("Simulate Citizen Query:", value="సూర్యపేట జిల్లాలో నాకు 1000 సెల్ల భూమి వుంది. నేను వరద సహాయానికి అర్హుడినా?", key="txt_query")
         if st.button("🚀 Fire Live Pipeline", type="primary", use_container_width=True, key="btn_execute_text"):
             with st.spinner("Executing live pipeline..."):
                 import asyncio
@@ -365,17 +370,10 @@ with tab_wa:
             csc = result.get("csc_center", {})
             out_audio = result.get("outbound_audio_url")
 
-            # Formatted WhatsApp Checklist
-            checklist_reply = (
-                f"📋 *{verdict.get('scheme_name', 'Government Welfare Scheme')}*\n"
-                f"💰 *अंदाजे भरपाई / Entitlement:* {verdict.get('entitlement_summary', 'Applicable')}\n\n"
-                f"📑 *आवश्यक ३ कागदपत्रे / 3 Required Documents:*\n"
-            )
-            for d in verdict.get("exact_three_documents", ["7/12 Land Extract", "Aadhaar Bank Passbook", "Panchnama"]):
-                checklist_reply += f"  ✅ {d}\n"
-            checklist_reply += f"\n📍 *जवळचे केंद्र / Nearest Center:* {csc.get('center_name', 'Maha e-Seva Kendra')}\n"
-            checklist_reply += f"🗺️ *Directions:* {csc.get('google_maps_url', 'https://maps.google.com')}\n"
-            checklist_reply += f"📜 *Citation:* {verdict.get('source_citation', 'Official Government Resolution')}"
+            # Formatted WhatsApp Checklist using state & language aware localized formatter
+            from app.main import format_whatsapp_checklist
+            lang_code = result.get("language_code", "te-IN")
+            checklist_reply = format_whatsapp_checklist(verdict, csc, lang_code)
 
             # Append Bot Message
             st.session_state.wa_chat_history.append({
@@ -426,18 +424,26 @@ with tab_wa:
 
     # 5. Quick Suggestion Preset Buttons
     st.markdown("**⚡ Quick Example Prompts (Click to ask instantly):**")
-    chip_c1, chip_c2, chip_c3, chip_c4 = st.columns(4)
-    if chip_c1.button("🌾 Marathi: जालन्यात २ एकर दुष्काळ निधी?", key="btn_marathi"):
+    chip_c1, chip_c2, chip_c3 = st.columns(3)
+    if chip_c1.button("🌾 Telugu: సూర్యపేట 1000 సెంట్లు వరద సాయం?", key="btn_telugu", use_container_width=True):
+        st.session_state.pending_query = "సూర్యపేట జిల్లాలో నాకు 1000 సెల్ల భూమి వుంది. నేను వరద సహాయానికి అర్హుడినా?"
+        st.rerun()
+    if chip_c2.button("🌾 Kannada: ಬೆಳಗಾವಿ 2 ಎಕರೆ ಬರ ಪರಿಹಾರ?", key="btn_kannada", use_container_width=True):
+        st.session_state.pending_query = "ನನಗೆ ಬೆಳಗಾವಿಯಲ್ಲಿ 2 ಎಕರೆ ಜಮೀನಿದೆ, ನನಗೆ ಬರ ಪರಿಹಾರ ಸಿಗುತ್ತದೆಯೇ?"
+        st.rerun()
+    if chip_c3.button("🚜 UP/Hindi: गोरखपुर 3 बीघा सूखा राहत?", key="btn_uphindi", use_container_width=True):
+        st.session_state.pending_query = "मेरे पास गोरखपुर में 3 बीघा जमीन है, क्या मुझे सूखा राहत योजना का लाभ मिलेगा?"
+        st.rerun()
+
+    chip_c4, chip_c5, chip_c6 = st.columns(3)
+    if chip_c4.button("🌾 Punjab: ਬਠਿੰਡਾ 2 ਕਿੱਲੇ ਮੁਆਵਜ਼ਾ?", key="btn_punjab", use_container_width=True):
+        st.session_state.pending_query = "ਮੇਰੇ ਕੋਲ ਬਠਿੰਡਾ ਵਿੱਚ 2 ਕਿੱਲੇ ਜ਼ਮੀਨ ਹੈ, ਕੀ ਮੈਨੂੰ ਮੁਆਵਜ਼ਾ ਮਿਲੇਗਾ?"
+        st.rerun()
+    if chip_c5.button("🌾 Marathi: जालन्यात २ एकर दुष्काळ निधी?", key="btn_marathi", use_container_width=True):
         st.session_state.pending_query = "माझ्याकडे जालन्यात २ एकर जमीन आहे, मला दुष्काळ निधी मिळेल का?"
         st.rerun()
-    if chip_c2.button("🚜 Hindi: 3 बीघा जमीन पर फसल नुकसान?", key="btn_hindi"):
-        st.session_state.pending_query = "मेरे पास 3 बीघा जमीन है, क्या मुझे सूखा राहत योजना का लाभ मिलेगा?"
-        st.rerun()
-    if chip_c3.button("🌾 Gujarati: જામનગરમાં ૫ વીઘા દુષ્કાળ સહાય?", key="btn_gujarati"):
+    if chip_c6.button("🌾 Gujarati: જામનગરમાં ૫ વીઘા સહાય?", key="btn_gujarati", use_container_width=True):
         st.session_state.pending_query = "મારી પાસે જામનગરમાં ૫ વીઘા જમીન છે, શું મને મુખ્યમંત્રી કિસાન સહાય યોજના મળશે?"
-        st.rerun()
-    if chip_c4.button("🏭 English: MSME Collateral-Free Loan?", key="btn_msme"):
-        st.session_state.pending_query = "I run a small fabrication workshop in Pune, how to get collateral-free loan under CGTMSE?"
         st.rerun()
 
     # 6. Optional Voice Note File Upload
@@ -455,14 +461,23 @@ with tab_wa:
 
     # 8. Clear Chat Button
     if st.button("Clear Chat 🗑️", key="btn_clear_chat"):
+        import asyncio
+        from app.db_session import clear_session_history
+        asyncio.run(clear_session_history("whatsapp:+919876543210"))
         st.session_state.wa_chat_history = [
             {
                 "role": "bot",
                 "time": "Just now",
-                "text": "🇮🇳 *नमस्कार! मी पॉलिसी-सेतू AI आहे.*\n\nआपल्या शेतातील जमीन, दुष्काळ भरपाई, पीक विमा (PMFBY), किंवा MSME कर्जाबाबत प्रश्न विचारा किंवा व्हॉइस नोट पाठवा. मी शासकीय नियमावलीनुसार अचूक माहिती देईन.",
+                "text": (
+                    "🇮🇳 *Namaste! Welcome to PolicySetu AI (पॉलिसी-सेतू / పాలసీ-సేతు / ಪಾಲಿಸಿ-ಸೇತು)*\n\n"
+                    "Ask questions in your regional language (**Telugu, Kannada, Hindi, Marathi, Gujarati, Punjabi, English**) "
+                    "about agricultural calamity relief, drought subsidies, land records, or MSME credit."
+                ),
                 "audio_url": None
             }
         ]
+        st.session_state["latest_result"] = None
+        st.toast("🧹 Chat history and session memory cleared!", icon="✅")
         st.rerun()
 
 # ==============================================================================
@@ -590,7 +605,7 @@ with tab_monitor:
         with a1:
             st.markdown("**🌦️ Open-Meteo Weather**")
             st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.markdown(f"**District:** `{weather.get('district', 'Jalna')}`")
+            st.markdown(f"**District:** `{weather.get('district', 'Central')}`")
             st.markdown(f"**10-day Rain:** `{weather.get('recent_rainfall_10d_mm', 0.0)} mm`")
             st.markdown(f"**Deficit:** `{weather.get('rainfall_deficit_percentage', 65.0)}%`")
             st.markdown(f"**Status:** <span class='pill-badge badge-amber'>{weather.get('drought_severity_indicator', 'Severe Deficit')}</span>", unsafe_allow_html=True)
@@ -599,9 +614,9 @@ with tab_monitor:
             st.markdown('</div>', unsafe_allow_html=True)
 
         with a2:
-            st.markdown("**🏢 Nearest CSC / Maha e-Seva**")
+            st.markdown("**🏢 Nearest Civic Service Center (CSC / e-Seva)**")
             st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.markdown(f"**Center:** `{csc.get('center_name', 'Maha e-Seva Kendra')}`")
+            st.markdown(f"**Center:** `{csc.get('center_name', 'Civic Service Center')}`")
             st.markdown(f"**Address:** {csc.get('address', 'Tehsil Office')}")
             st.markdown(f"[🧭 Google Maps Navigation Link]({csc.get('google_maps_url', '#')})")
             with st.expander("View Raw JSON"):

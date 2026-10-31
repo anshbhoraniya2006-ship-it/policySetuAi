@@ -4,6 +4,8 @@ Strictly implements:
   - Sub-second non-blocking Twilio webhook with FastAPI BackgroundTasks.
   - Native WhatsApp Location Pin detection (lat, lon).
   - Two-message WhatsApp protocol (Msg 1: playable OGG Opus voice note; Msg 2: vernacular checklist & Maps pin).
+  - Multi-state (Telangana, Karnataka, MP, UP, Bihar, Punjab, Haryana, Gujarat, Maharashtra) support.
+  - Multi-lingual dynamic language detection & localization across all supported Indian languages.
   - Trap 1 Bypass: /test-voice endpoint for zero-cost judge & developer testing.
   - Static audio hosting & live telemetry sync.
 """
@@ -24,13 +26,17 @@ from app.live_apis import fetch_all_live_context, geocode_location
 from app.speech import (
     transcribe_and_translate_audio,
     translate_text_vernacular,
+    translate_to_english,
     create_voice_note_file,
-    download_audio_from_twilio
+    download_audio_from_twilio,
+    detect_text_language,
+    LANGUAGE_NAMES
 )
 from app.rag_chains import extract_citizen_profile, adjudicate_eligibility
 from app.db_session import (
     get_session_history,
     save_session_history,
+    clear_session_history,
     upload_audio_to_public_storage,
     log_telemetry_event,
     get_latest_telemetry_logs
@@ -43,7 +49,7 @@ logger = logging.getLogger("policysetu.main")
 app = FastAPI(
     title="PolicySetu AI - Multilingual Policy & Scheme Explainer",
     description="WhatsApp-native conversational AI powered by RAG, regional speech, and live public APIs.",
-    version="1.0.0"
+    version="2.0.0"
 )
 
 app.add_middleware(
@@ -56,6 +62,101 @@ app.add_middleware(
 
 # Mount local audio directory for direct playback
 app.mount("/static/audio", StaticFiles(directory=str(settings.AUDIO_DIR)), name="static_audio")
+
+
+# ==============================================================================
+# Vernacular Checklist Formatting Dictionary
+# ==============================================================================
+
+CHECKLIST_LOCALIZATIONS = {
+    "mr-IN": {
+        "entitlement": "अंदाजे भरपाई / Entitlement",
+        "docs": "आवश्यक ३ कागदपत्रे / 3 Required Documents",
+        "csc": "जवळचे सेवा केंद्र / Nearest Service Center",
+        "directions": "मार्ग / Directions",
+        "citation": "शासन निर्णय / Source Citation",
+    },
+    "hi-IN": {
+        "entitlement": "अनुमानित सहायता / Entitlement",
+        "docs": "आवश्यक ३ दस्तावेज / 3 Required Documents",
+        "csc": "नजदीकी सेवा केंद्र / Nearest Service Center",
+        "directions": "मार्ग / Directions",
+        "citation": "शासनादेश / Source Citation",
+    },
+    "te-IN": {
+        "entitlement": "అంచనా పరిహారం / Entitlement",
+        "docs": "కావలసిన 3 పత్రాలు / 3 Required Documents",
+        "csc": "సమీప సేవా కేంద్రం / Nearest Service Center",
+        "directions": "దారి / Directions",
+        "citation": "ప్రభుత్వ ఉత్తర్వులు / Source Citation",
+    },
+    "kn-IN": {
+        "entitlement": "ಅಂದಾಜು ಪರಿಹಾರ / Entitlement",
+        "docs": "ಅಗತ್ಯವಿರುವ ೩ ದಾಖಲೆಗಳು / 3 Required Documents",
+        "csc": "ಹತ್ತಿರದ ಸೇವಾ ಕೇಂದ್ರ / Nearest Service Center",
+        "directions": "ಮಾರ್ಗ / Directions",
+        "citation": "ಸರ್ಕಾರಿ ಆದೇಶ / Source Citation",
+    },
+    "gu-IN": {
+        "entitlement": "અંદાજિત સહાય / Entitlement",
+        "docs": "જરૂરી ૩ દસ્તાવેજો / 3 Required Documents",
+        "csc": "નજીકનું સેવા કેન્દ્ર / Nearest Service Center",
+        "directions": "માર્ગ / Directions",
+        "citation": "સરકારી ઠરાવ / Source Citation",
+    },
+    "pa-IN": {
+        "entitlement": "ਅੰਦਾਜ਼ਨ ਮੁਆਵਜ਼ਾ / Entitlement",
+        "docs": "ਲੋੜੀਂਦੇ 3 ਦਸਤਾਵੇਜ਼ / 3 Required Documents",
+        "csc": "ਨੇੜਲਾ ਸੇਵਾ ਕੇਂਦਰ / Nearest Service Center",
+        "directions": "ਰਸਤਾ / Directions",
+        "citation": "ਸਰਕਾਰੀ ਹੁਕਮ / Source Citation",
+    },
+    "en-IN": {
+        "entitlement": "Estimated Entitlement",
+        "docs": "3 Required Mandatory Documents",
+        "csc": "Nearest Service Center",
+        "directions": "Directions / Route",
+        "citation": "Source Citation / Mandate",
+    }
+}
+
+
+def format_whatsapp_checklist(
+    verdict: Any,
+    csc_center: Dict[str, Any],
+    lang_code: str
+) -> str:
+    """Formats Message 2 visual checklist card with localized headers."""
+    # Find matching language config or fallback to Hindi/English
+    loc = CHECKLIST_LOCALIZATIONS.get(
+        lang_code,
+        CHECKLIST_LOCALIZATIONS.get(lang_code[:2] + "-IN", CHECKLIST_LOCALIZATIONS["hi-IN"])
+    )
+    if isinstance(verdict, dict):
+        scheme_name = verdict.get("scheme_name", "Government Welfare Scheme")
+        entitlement = verdict.get("entitlement_summary", "Applicable")
+        docs = verdict.get("exact_three_documents", ["Relevant Land Extract", "Aadhaar Card", "Bank Passbook"])
+        citation = verdict.get("source_citation", "Official Government Mandate")
+    else:
+        scheme_name = getattr(verdict, "scheme_name", "Government Welfare Scheme")
+        entitlement = getattr(verdict, "entitlement_summary", "Applicable")
+        docs = getattr(verdict, "exact_three_documents", ["Relevant Land Extract", "Aadhaar Card", "Bank Passbook"])
+        citation = getattr(verdict, "source_citation", "Official Government Mandate")
+
+    docs_checklist = "\n".join([f"  ✅ {doc}" for doc in docs])
+    maps_link = csc_center.get("google_maps_url", "https://maps.google.com")
+    center_name = csc_center.get("center_name", "Public Service Centre")
+
+    return (
+        f"📋 *{scheme_name}*\n"
+        f"💰 *{loc['entitlement']}:* {entitlement}\n\n"
+        f"📑 *{loc['docs']}:*\n"
+        f"{docs_checklist}\n\n"
+        f"📍 *{loc['csc']}:*\n"
+        f"{center_name}\n"
+        f"🗺️ {loc['directions']}: {maps_link}\n\n"
+        f"📜 *{loc['citation']}:* {citation}"
+    )
 
 
 # ==============================================================================
@@ -109,20 +210,20 @@ async def process_voice_or_text_pipeline(
     lon: Optional[float] = None
 ) -> Dict[str, Any]:
     """
-    Executes the 6-stage end-to-end voice/text pipeline:
-      Stage 1: STT & Dialect Detection (Sarvam Saaras V4)
+    Executes the 6-stage end-to-end voice/text pipeline across all 9 Indian states:
+      Stage 1: STT & Dialect Detection (Sarvam / Gemini Multimodal / Unicode Language Detector)
       Stage 2: Entity & Multi-Turn State Extraction (LangChain LCEL Chain 1)
-      Stage 3: Deterministic Land-Unit Normalization (Pure Python)
-      Stage 4: Parallel Retrieval (Qdrant Hybrid RAG + OSM/Places CSC + Open-Meteo)
+      Stage 3: State-Aware Deterministic Land-Unit Normalization (Pure Python)
+      Stage 4: Parallel Retrieval (Qdrant Vector RAG + OSM/Places CSC + Open-Meteo)
       Stage 5: Grounded Scheme Adjudication (LangChain LCEL Chain 2)
-      Stage 6: Regional Translation, Bulbul TTS & WhatsApp Dispatch
+      Stage 6: Multi-Lingual Regional Translation, TTS & WhatsApp Two-Message Dispatch
     """
     start_time = time.time()
     session_id = f"sess_{uuid.uuid4().hex[:8]}"
 
     # --- Stage 1: Ingest Speech / Text ---
     incoming_audio_url = media_url or ""
-    detected_lang = "mr-IN"
+    detected_lang = "hi-IN"
     native_transcript = ""
     english_query = ""
 
@@ -146,17 +247,27 @@ async def process_voice_or_text_pipeline(
             audio_bytes, filename=f"citizen_audio.{ext}"
         )
     elif text_body:
-        english_query = text_body
         native_transcript = text_body
-        detected_lang = "mr-IN" if any('\u0900' <= c <= '\u097F' for c in text_body) else "en-IN"
+        detected_lang = detect_text_language(text_body)
+        if detected_lang not in ("en-IN", "en"):
+            english_query = await translate_to_english(text_body, detected_lang)
+        else:
+            english_query = text_body
     else:
-        english_query = "I have 2 acres of land in Jalna. Can I get drought relief?"
-        native_transcript = "माझ्याकडे जालन्यात २ एकर जमीन आहे, मला दुष्काळ निधी मिळेल का?"
-        detected_lang = "mr-IN"
+        english_query = "I have 2 acres of land. Can I get drought relief subsidy?"
+        native_transcript = "मेरे पास 2 एकड़ जमीन है, क्या मुझे सूखा राहत का लाभ मिल सकता है?"
+        detected_lang = "hi-IN"
 
     # --- Stage 2: Profile & Multi-Turn Context Extraction ---
     prior_history = await get_session_history(sender_phone)
     profile = await extract_citizen_profile(english_query, prior_history)
+
+    # Refine detected language using state hint if message was Romanized or state-specific
+    if profile.state:
+        refined_lang = detect_text_language(native_transcript, state_hint=profile.state)
+        # Apply refined language if detected_lang was generic
+        if detected_lang in ("en-IN", "hi-IN"):
+            detected_lang = refined_lang
 
     # Multi-Turn Short-Circuit: If mandatory question is missing
     if profile.missing_critical_question:
@@ -192,21 +303,21 @@ async def process_voice_or_text_pipeline(
         await log_telemetry_event(telemetry)
         return telemetry
 
-    # --- Stage 3: Deterministic Land-Unit Normalization ---
-    hectares = convert_to_hectares(profile.land_value, profile.land_unit)
+    # --- Stage 3: Deterministic Land-Unit Normalization (State-Aware) ---
+    hectares = convert_to_hectares(profile.land_value, profile.land_unit, state=profile.state)
     if hectares is None:
         hectares = 0.809  # 2.0 Acres default benchmark
 
     # --- Stage 4: Parallel Live Retrieval (Vector DB + GIS + Weather) ---
     rag_task = query_qdrant_mandates(
-        query=f"{profile.sector} {profile.crop_or_business_type} eligibility {profile.state}",
-        state=profile.state or "Maharashtra",
+        query=f"{profile.sector} {profile.crop_or_business_type} eligibility {profile.state or ''}",
+        state=profile.state or "All_India",
         sector=profile.sector,
         limit=4
     )
     live_context_task = fetch_all_live_context(
-        district_or_village=profile.district_or_village or "Jalna",
-        state=profile.state or "Maharashtra",
+        district_or_village=profile.district_or_village or "Central",
+        state=profile.state or "All_India",
         lat=lat,
         lon=lon
     )
@@ -235,19 +346,7 @@ async def process_voice_or_text_pipeline(
     send_twilio_message(sender_phone, media_url=outbound_audio_url)
 
     # Message 2: Visual Vernacular Checklist
-    docs_checklist = "\n".join([f"  ✅ {doc}" for doc in verdict.exact_three_documents])
-    maps_link = csc_center.get("google_maps_url", "https://maps.google.com")
-    center_name = csc_center.get("center_name", "Nearest Maha e-Seva Kendra")
-    checklist_text = (
-        f"📋 *{verdict.scheme_name}*\n"
-        f"💰 *अंदाजे भरपाई / Entitlement:* {verdict.entitlement_summary}\n\n"
-        f"📑 *आवश्यक ३ कागदपत्रे / 3 Required Documents:*\n"
-        f"{docs_checklist}\n\n"
-        f"📍 *जवळचे सेवा केंद्र / Nearest CSC:*\n"
-        f"{center_name}\n"
-        f"🗺️ मार्ग / Directions: {maps_link}\n\n"
-        f"📜 *शासन निर्णय / Source Citation:* {verdict.source_citation}"
-    )
+    checklist_text = format_whatsapp_checklist(verdict, csc_center, detected_lang)
     send_twilio_message(sender_phone, body=checklist_text)
 
     # Save multi-turn conversation memory
@@ -321,7 +420,7 @@ async def twilio_whatsapp_webhook(
 
 
 class TestVoiceRequest(BaseModel):
-    query_text: Optional[str] = "माझ्याकडे जालन्यात २ एकर जमीन आहे, मला दुष्काळ निधी मिळेल का?"
+    query_text: Optional[str] = "मेरे पास 2 एकड़ जमीन है, क्या मुझे सूखा राहत का लाभ मिल सकता है?"
     phone_number: Optional[str] = "whatsapp:+919876543210"
     latitude: Optional[float] = None
     longitude: Optional[float] = None
