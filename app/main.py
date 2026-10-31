@@ -497,9 +497,7 @@ async def adjudicate_fast_whatsapp(
     # Multi-turn short-circuit if mandatory details missing
     if profile.missing_critical_question:
         loc_q = await translate_text_vernacular(profile.missing_critical_question, detected_lang)
-        reply = f"🙏 *PolicySetu AI*
-
-{loc_q}"
+        reply = f"🙏 *PolicySetu AI*\n\n{loc_q}"
         meta = {
             "session_id": session_id,
             "phone_number": sender_phone,

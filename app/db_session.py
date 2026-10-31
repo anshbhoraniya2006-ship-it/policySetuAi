@@ -137,10 +137,8 @@ async def get_session_history(phone_number: str) -> str:
         conn.close()
         if row and row[0]:
             raw_hist = row[0]
-            lines = [l for l in raw_hist.split("
-") if l.strip()]
-            return "
-".join(lines[-6:])
+            lines = [l for l in raw_hist.split("\n") if l.strip()]
+            return "\n".join(lines[-6:])
     except Exception as e:
         logger.debug(f"SQLite session lookup note: {e}")
 
@@ -156,7 +154,7 @@ async def get_session_history(phone_number: str) -> str:
                 return "\n".join(lines[-6:])
         except Exception as e:
             mark_supabase_error(e)
-logger.debug(f"Supabase session lookup note: {e}")
+            logger.debug(f"Supabase session lookup note: {e}")
 
     return ""
 
