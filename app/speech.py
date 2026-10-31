@@ -23,6 +23,12 @@ logger = logging.getLogger("policysetu.speech")
 logger.setLevel(logging.INFO)
 
 # Mapping of common language tags to display names
+_SARVAM_AVAILABLE = None
+
+def mark_sarvam_status(available: bool):
+    global _SARVAM_AVAILABLE
+    _SARVAM_AVAILABLE = available
+
 LANGUAGE_NAMES = {
     "mr-IN": "Marathi (मराठी)",
     "hi-IN": "Hindi (हिन्दी)",
@@ -121,7 +127,7 @@ async def transcribe_and_translate_audio(
         (english_translation, detected_language_code, native_script_transcript)
     """
     # 1. Try Sarvam Saaras V4 if configured
-    if settings.is_sarvam_configured():
+    if settings.is_sarvam_configured() and _SARVAM_AVAILABLE is not False:
         url = f"{settings.SARVAM_API_BASE_URL.rstrip('/')}/speech-to-text-translate"
         headers = {"api-subscription-key": settings.SARVAM_API_KEY}
         files = {"file": (filename, audio_bytes, "audio/ogg")}
@@ -136,6 +142,8 @@ async def transcribe_and_translate_audio(
                     native_text = data.get("native_transcript", english_text)
                     return english_text, lang_code, native_text
                 else:
+                    if resp.status_code in (401, 403):
+                        mark_sarvam_status(False)
                     logger.warning(f"Sarvam STT returned {resp.status_code}. Falling back to Gemini Multimodal Audio.")
         except Exception as e:
             logger.error(f"Sarvam STT error: {e}")
@@ -165,7 +173,7 @@ async def translate_text_vernacular(
         return text
 
     # 1. Try Sarvam Mayura Translation
-    if settings.is_sarvam_configured():
+    if settings.is_sarvam_configured() and _SARVAM_AVAILABLE is not False:
         url = f"{settings.SARVAM_API_BASE_URL.rstrip('/')}/translate"
         headers = {
             "api-subscription-key": settings.SARVAM_API_KEY,
@@ -188,6 +196,8 @@ async def translate_text_vernacular(
                     if translated:
                         return translated
                 else:
+                    if resp.status_code in (401, 403):
+                        mark_sarvam_status(False)
                     logger.warning(f"Sarvam Translation returned {resp.status_code}. Using Gemini translation fallback.")
         except Exception as e:
             logger.error(f"Sarvam Translation error: {e}")
@@ -239,7 +249,7 @@ async def synthesize_speech_wav(
     Falls back to high-quality natural Indic TTS via gTTS when Sarvam is unavailable/unconfigured.
     Returns audio bytes (WAV or MP3).
     """
-    if settings.is_sarvam_configured():
+    if settings.is_sarvam_configured() and _SARVAM_AVAILABLE is not False:
         url = f"{settings.SARVAM_API_BASE_URL.rstrip('/')}/text-to-speech"
         headers = {
             "api-subscription-key": settings.SARVAM_API_KEY,
@@ -266,6 +276,8 @@ async def synthesize_speech_wav(
                     if audios:
                         return base64.b64decode(audios[0])
                 else:
+                    if resp.status_code in (401, 403):
+                        mark_sarvam_status(False)
                     logger.warning(f"Sarvam Bulbul returned status {resp.status_code}. Using gTTS regional voice fallback.")
         except Exception as e:
             logger.error(f"Sarvam Bulbul TTS error: {e}")
