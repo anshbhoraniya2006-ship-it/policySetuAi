@@ -75,14 +75,27 @@ init_sqlite_db()
 # Supabase Cloud Client (if configured)
 # ==============================================================================
 
+_SUPABASE_AVAILABLE = None
+
+def mark_supabase_error(error: Any):
+    global _SUPABASE_AVAILABLE
+    err_str = str(error)
+    if "PGRST205" in err_str or "schema cache" in err_str or "404" in err_str or "Bucket not found" in err_str:
+        if _SUPABASE_AVAILABLE is not False:
+            logger.info("Supabase schema uninitialized. Fast-switching to built-in SQLite engine.")
+            _SUPABASE_AVAILABLE = False
+
+
 def get_supabase_client():
-    if not settings.is_supabase_configured():
+    global _SUPABASE_AVAILABLE
+    if _SUPABASE_AVAILABLE is False or not settings.is_supabase_configured():
         return None
     try:
         from supabase import create_client
         return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
     except Exception as e:
         logger.error(f"Failed to initialize Supabase client: {e}")
+        _SUPABASE_AVAILABLE = False
         return None
 
 
@@ -103,6 +116,7 @@ async def get_session_history(phone_number: str) -> str:
             if res.data:
                 return res.data[0].get("history", "")
         except Exception as e:
+            mark_supabase_error(e)
             logger.warning(f"Supabase session lookup error: {e}")
 
     # Fallback: SQLite
@@ -141,6 +155,7 @@ async def save_session_history(phone_number: str, session_id: str, new_user_msg:
                 "last_updated": now_iso
             }).execute()
         except Exception as e:
+            mark_supabase_error(e)
             logger.warning(f"Supabase session save error: {e}")
 
     # SQLite
@@ -189,6 +204,7 @@ async def upload_audio_to_public_storage(file_path: Path) -> str:
             if public_url:
                 return public_url
         except Exception as e:
+            mark_supabase_error(e)
             logger.warning(f"Supabase audio upload error: {e}. Falling back to public base URL.")
 
     # Local fallback URL served by FastAPI static route
@@ -231,6 +247,7 @@ async def log_telemetry_event(payload: Dict[str, Any]):
         try:
             sb.table("telemetry_logs").insert(record).execute()
         except Exception as e:
+            mark_supabase_error(e)
             logger.warning(f"Supabase telemetry insert failed: {e}")
 
     # 2. SQLite local insertion
@@ -260,21 +277,17 @@ async def log_telemetry_event(payload: Dict[str, Any]):
         logger.error(f"SQLite telemetry insert failed: {e}")
 
 
-_SUPABASE_TELEMETRY_AVAILABLE = True
-
 def get_latest_telemetry_logs(limit: int = 15) -> List[Dict[str, Any]]:
     """Fetches latest telemetry logs for the Streamlit dashboard."""
-    global _SUPABASE_TELEMETRY_AVAILABLE
-    if _SUPABASE_TELEMETRY_AVAILABLE:
-        sb = get_supabase_client()
-        if sb:
-            try:
-                res = sb.table("telemetry_logs").select("*").order("timestamp", desc=True).limit(limit).execute()
-                if res.data:
-                    return res.data
-            except Exception as e:
-                logger.warning(f"Supabase fetch logs error: {e}. Falling back to SQLite.")
-                _SUPABASE_TELEMETRY_AVAILABLE = False
+    sb = get_supabase_client()
+    if sb:
+        try:
+            res = sb.table("telemetry_logs").select("*").order("timestamp", desc=True).limit(limit).execute()
+            if res.data:
+                return res.data
+        except Exception as e:
+            mark_supabase_error(e)
+            logger.warning(f"Supabase fetch logs error: {e}")
 
     # Fallback SQLite query
     logs = []
