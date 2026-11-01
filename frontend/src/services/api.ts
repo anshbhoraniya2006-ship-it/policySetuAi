@@ -129,6 +129,13 @@ export async function submitVoiceUpload(
 
 export function resolveAudioUrl(urlPath?: string): string {
   if (!urlPath) return '';
+  // If the backend returned a localhost/127.0.0.1 URL while running via Vite proxy or Render, normalize to relative path
+  if (urlPath.includes('localhost:') || urlPath.includes('127.0.0.1:')) {
+    const staticIdx = urlPath.indexOf('/static/audio/');
+    if (staticIdx !== -1) {
+      urlPath = urlPath.substring(staticIdx);
+    }
+  }
   if (urlPath.startsWith('http://') || urlPath.startsWith('https://')) {
     return urlPath;
   }

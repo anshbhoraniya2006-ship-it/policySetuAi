@@ -351,14 +351,14 @@ async def process_voice_or_text_pipeline(
     # --- Stage 6: Vernacular Translation, Neural TTS & Delivery ---
     localized_script = await translate_text_vernacular(verdict.english_voice_script, detected_lang)
     outbound_audio_url = ""
-    # Only synthesize and host audio note if citizen sent audio or audio was requested
-    if media_url or audio_bytes:
-        try:
-            outbound_audio_file, _ = await create_voice_note_file(localized_script, detected_lang)
-            outbound_audio_url = await upload_audio_to_public_storage(outbound_audio_file)
+    # Synthesize regional audio note using neural TTS (gTTS / Bulbul)
+    try:
+        outbound_audio_file, _ = await create_voice_note_file(localized_script, detected_lang)
+        outbound_audio_url = await upload_audio_to_public_storage(outbound_audio_file)
+        if media_url or audio_bytes:
             send_twilio_message(sender_phone, media_url=outbound_audio_url)
-        except Exception as e:
-            logger.debug(f"Voice note dispatch note: {e}")
+    except Exception as e:
+        logger.debug(f"Voice note dispatch note: {e}")
 
     # Message 2: Visual Vernacular Checklist
     checklist_text = format_whatsapp_checklist(verdict, csc_center, detected_lang)
