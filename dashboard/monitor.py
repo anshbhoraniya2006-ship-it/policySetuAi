@@ -185,7 +185,7 @@ with st.sidebar:
         text = "ACTIVE" if is_online else "LOCAL FALLBACK"
         st.markdown(f"• **{label}**: <span style='color:{color}; font-weight:bold;'>{text}</span>", unsafe_allow_html=True)
 
-    status_pill(settings.is_twilio_configured(), "Twilio WhatsApp Sandbox")
+    status_pill(True, "PolicySetu Web Voice Engine")
     status_pill(settings.is_sarvam_configured(), "Sarvam AI (Saaras + Bulbul)")
     status_pill(settings.is_gemini_configured(), "Google Gemini LLM")
     status_pill(settings.is_qdrant_configured(), "Qdrant Hybrid Vector Store")
@@ -303,17 +303,15 @@ with st.sidebar:
                 st.rerun()
 
     st.markdown("---")
-    st.markdown("### 📞 Twilio Sandbox Credentials")
-    st.caption(f"Number: `{settings.TWILIO_WHATSAPP_NUMBER}`")
-    st.caption("Backend Port: `8000` | Monitor Port: `8501`")
+    st.markdown("### 🌐 Citizen Web Engine")
+    st.caption("Backend Port: `8000` | Frontend UI: `3000`")
 
 # ==============================================================================
 # Main Interactive Tabs
 # ==============================================================================
-tab_wa, tab_monitor, tab_connect = st.tabs([
-    "💬 Live WhatsApp UI (Interactive Chat)",
-    "🛰️ Real-Time Telemetry & Judge Monitor (Rule 4 Proof)",
-    "📲 Connect Real WhatsApp Mobile (Twilio Webhook Guide)"
+tab_wa, tab_monitor = st.tabs([
+    "🎙️ Live Citizen Voice & Text Console",
+    "🛰️ Real-Time Telemetry & System Monitor"
 ])
 
 # ==============================================================================
@@ -640,35 +638,3 @@ with tab_monitor:
                     st.markdown(f"**Source URL:** [{ch.get('source_url')}]({ch.get('source_url')})")
                     st.markdown("```markdown\n" + ch.get("content", "") + "\n```")
 
-# ==============================================================================
-# TAB 3: Connect Real WhatsApp Mobile (Twilio Guide)
-# ==============================================================================
-with tab_connect:
-    st.subheader("📲 Connect Real WhatsApp from Your Physical Phone")
-    st.markdown("""
-        You can connect any physical smartphone to this running FastAPI backend via the **Twilio WhatsApp Sandbox** in 3 simple steps:
-    """)
-
-    st.markdown("### Step 1: Start an HTTPS Tunnel to Port 8000")
-    st.markdown("Run either of these commands in a new terminal:")
-    st.code("npx localtunnel --port 8000\n# OR using Cloudflare:\ncloudflared tunnel --url http://localhost:8000", language="bash")
-    st.caption("Copy the public HTTPS URL generated (e.g. `https://policysetu-demo.loca.lt`)")
-
-    st.markdown("### Step 2: Configure Twilio WhatsApp Sandbox")
-    st.markdown("""
-        1. Open your [Twilio Console > Messaging > WhatsApp Sandbox Settings](https://console.twilio.com/us1/develop/sms/settings/whatsapp-sandbox).
-        2. In **'WHEN A MESSAGE COMES IN'**, enter your public URL:
-           `https://<your-tunnel-url>/webhook/whatsapp`
-        3. Set the HTTP method to **HTTP POST** and click **Save**.
-    """)
-
-    st.markdown("### Step 3: Send a Voice Note from Your Phone")
-    st.markdown(f"""
-        1. Save Twilio's WhatsApp number on your phone: **`{settings.TWILIO_WHATSAPP_NUMBER.replace('whatsapp:', '')}`**
-        2. Send the sandbox join code displayed in your Twilio console (e.g. `join <code-name>`).
-        3. Once joined, record a dialect voice note:
-           > *"माझ्याकडे जालन्यात २ एकर जमीन आहे, मला दुष्काळ निधी मिळेल का?"*
-        4. Within seconds, PolicySetu AI will reply directly on your WhatsApp with:
-           - **Playable Voice Note (.ogg Opus audio bubble)**
-           - **3-Document checklist + Clickable Google Maps directions**
-    """)

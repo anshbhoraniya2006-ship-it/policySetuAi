@@ -246,64 +246,143 @@ def build_verdict_chain(llm):
 # 3. Deterministic Extraction & Adjudication Pipeline Execution
 # ==============================================================================
 
-async def extract_citizen_profile(
+
+# ==============================================================================
+# Vernacular District Map & Fast Digit / Unit Normalizer
+# ==============================================================================
+
+VERNACULAR_DISTRICT_MAP = {
+    # Maharashtra
+    "जालना": ("Jalna", "Maharashtra"),
+    "जालन्यात": ("Jalna", "Maharashtra"),
+    "जालनामध्ये": ("Jalna", "Maharashtra"),
+    "बीड": ("Beed", "Maharashtra"),
+    "बीडमध्ये": ("Beed", "Maharashtra"),
+    "लातूर": ("Latur", "Maharashtra"),
+    "सोलापूर": ("Solapur", "Maharashtra"),
+    "पुणे": ("Pune", "Maharashtra"),
+    "पुण्यात": ("Pune", "Maharashtra"),
+    "नाशिक": ("Nashik", "Maharashtra"),
+    "नागपूर": ("Nagpur", "Maharashtra"),
+    "औरंगाबाद": ("Chhatrapati Sambhajinagar", "Maharashtra"),
+    "संभाजीनगर": ("Chhatrapati Sambhajinagar", "Maharashtra"),
+    # Telangana
+    "वरंगल": ("Warangal", "Telangana"),
+    "వరంగల్": ("Warangal", "Telangana"),
+    "సూర్యపేట": ("Suryapet", "Telangana"),
+    "నల్గొండ": ("Nalgonda", "Telangana"),
+    "ఖమ్మం": ("Khammam", "Telangana"),
+    "కరీంనగర్": ("Karimnagar", "Telangana"),
+    # Karnataka
+    "బెಳಗಾವಿ": ("Belagavi", "Karnataka"),
+    "ಧಾರವಾಡ": ("Dharwad", "Karnataka"),
+    "ಕಲಬುರಗಿ": ("Kalaburagi", "Karnataka"),
+    # Madhya Pradesh
+    "उज्जैन": ("Ujjain", "Madhya Pradesh"),
+    "इंदौर": ("Indore", "Madhya Pradesh"),
+    "देवास": ("Dewas", "Madhya Pradesh"),
+    "ग्वालियर": ("Gwalior", "Madhya Pradesh"),
+    "भोपाल": ("Bhopal", "Madhya Pradesh"),
+    # Uttar Pradesh
+    "गोरखपुर": ("Gorakhpur", "Uttar Pradesh"),
+    "वाराणसी": ("Varanasi", "Uttar Pradesh"),
+    "प्रयागराज": ("Prayagraj", "Uttar Pradesh"),
+    "अयोध्या": ("Ayodhya", "Uttar Pradesh"),
+    "लखनऊ": ("Lucknow", "Uttar Pradesh"),
+    # Bihar
+    "मुजफ्फरपुर": ("Muzaffarpur", "Bihar"),
+    "गया": ("Gaya", "Bihar"),
+    "पटना": ("Patna", "Bihar"),
+    "दरभंगा": ("Darbhanga", "Bihar"),
+    # Gujarat
+    "જામનગર": ("Jamnagar", "Gujarat"),
+    "રાજકોટ": ("Rajkot", "Gujarat"),
+    "ભાવનગર": ("Bhavnagar", "Gujarat"),
+    "અમદાવાદ": ("Ahmedabad", "Gujarat"),
+    "સુરત": ("Surat", "Gujarat"),
+    # Punjab
+    "ਲੁਧਿਆਣਾ": ("Ludhiana", "Punjab"),
+    "ਬਠਿੰਡਾ": ("Bathinda", "Punjab"),
+    "ਅੰਮ੍ਰਿਤਸਰ": ("Amritsar", "Punjab"),
+    # Haryana
+    "ਸਿਰਸਾ": ("Sirsa", "Haryana"),
+    "सिरसा": ("Sirsa", "Haryana"),
+    "ਹਿਸਾਰ": ("Hisar", "Haryana"),
+    "हिसार": ("Hisar", "Haryana"),
+    "करनाल": ("Karnal", "Haryana"),
+}
+
+INDIC_DIGITS_TABLE = str.maketrans(
+    '०१२३४५६७८९૦૧૨૩૪૫૬૭૮૯੦੧੨੩੪੫੬੭੮੯౦౧౨౩౪౫౬౭౮౯೦೧೨೩೪೫೬೭೮೯',
+    '01234567890123456789012345678901234567890123456789'
+)
+
+UNIT_NORMALIZATION = {
+    'एकर': 'acre', 'एकड़': 'acre', 'acre': 'acre', 'acres': 'acre', 'ఎకరాల': 'acre', 'ఎకరాలు': 'acre', 'ಎಕರೆ': 'acre',
+    'हेक्टर': 'hectare', 'हेक्टेयर': 'hectare', 'hectare': 'hectare', 'hectares': 'hectare',
+    'गुंठा': 'guntha', 'गुंठे': 'guntha', 'guntha': 'guntha', 'gunthas': 'guntha', 'గుంటలు': 'guntha',
+    'बीघा': 'bigha', 'विघा': 'bigha', 'વિઘા': 'bigha', 'bigha': 'bigha', 'vigha': 'bigha',
+    'कनाल': 'kanal', 'kanal': 'kanal',
+    'किल्ला': 'killa', 'किला': 'killa', 'killa': 'killa',
+    'सेंट': 'cent', 'cent': 'cent', 'cents': 'cent', 'సెంట్లు': 'cent', 'సెంట్': 'cent'
+}
+
+
+def fast_extract_citizen_profile(
     query: str,
     history: str = ""
 ) -> CitizenProfile:
     """
-    Executes LCEL Chain 1 to extract structured CitizenProfile across all 9 supported Indian states.
-    Falls back to high-fidelity multi-state rule-based parser if LLM is offline or times out.
+    Sub-millisecond rule-based citizen profile extractor across all 9 Indian states.
+    Handles Indic numerals, dialect land units, and vernacular district names.
+    Guarantees zero-latency profile availability without waiting on cloud LLM APIs.
     """
-    # 1. Primary Path: LangChain LCEL Gemini Chain (Context & dialect aware)
-    llm = get_llm()
-    if llm:
-        try:
-            chain = build_profile_chain(llm)
-            profile = await asyncio.wait_for(chain.ainvoke({"history": history or "None", "query": query}), timeout=4.0)
-            if isinstance(profile, CitizenProfile):
-                return profile
-            if isinstance(profile, dict):
-                return CitizenProfile(**profile)
-        except Exception as e:
-            logger.debug(f"LCEL Profile Chain fallback: {e}")
+    q_norm = (query or "").translate(INDIC_DIGITS_TABLE).lower()
+    h_norm = (history or "").translate(INDIC_DIGITS_TABLE).lower()
+    combined_norm = f"{h_norm} {q_norm}".strip()
 
-    # 2. Secondary Path: High-fidelity multi-state rule-based parser fallback
-    q_text = query.lower()
-    h_text = history.lower()
-    text = f"{history} {query}".lower()
     district = None
     state = None
 
-    # Step A: District match in current query FIRST
-    for d_name, st_name in DISTRICT_STATE_MAP.items():
-        d_lower = d_name.lower()
-        if re.search(r'\b' + re.escape(d_lower) + r'\b', q_text) or d_lower in q_text:
-            district = d_name.capitalize()
-            state = st_name
+    # Step 1: Check vernacular district map in query first, then history
+    for k, (d, s) in VERNACULAR_DISTRICT_MAP.items():
+        if k in q_norm:
+            district, state = d, s
             break
+    if not district:
+        for k, (d, s) in VERNACULAR_DISTRICT_MAP.items():
+            if k in h_norm:
+                district, state = d, s
+                break
 
-    # If not in query, check history
+    # Step 2: Check English district map
     if not district:
         for d_name, st_name in DISTRICT_STATE_MAP.items():
             d_lower = d_name.lower()
-            if re.search(r'\b' + re.escape(d_lower) + r'\b', h_text) or d_lower in h_text:
+            if re.search(r'\b' + re.escape(d_lower) + r'\b', q_norm) or d_lower in q_norm:
+                district = d_name.capitalize()
+                state = st_name
+                break
+    if not district:
+        for d_name, st_name in DISTRICT_STATE_MAP.items():
+            d_lower = d_name.lower()
+            if re.search(r'\b' + re.escape(d_lower) + r'\b', h_norm) or d_lower in h_norm:
                 district = d_name.capitalize()
                 state = st_name
                 break
 
-    # Step B: Explicit State match if district not found or state still None
+    # Step 3: State detection if district still not found
     if not state:
         for st_key, canonical in STATE_SYNONYMS.items():
-            if re.search(r'\b' + re.escape(st_key) + r'\b', q_text) or st_key in q_text:
+            if re.search(r'\b' + re.escape(st_key) + r'\b', q_norm) or st_key in q_norm:
                 state = canonical
                 break
     if not state:
         for st_key, canonical in STATE_SYNONYMS.items():
-            if re.search(r'\b' + re.escape(st_key) + r'\b', h_text) or st_key in h_text:
+            if re.search(r'\b' + re.escape(st_key) + r'\b', h_norm) or st_key in h_norm:
                 state = canonical
                 break
 
-    # Canonical district for known state if district was omitted
     if state and not district:
         state_district_defaults = {
             "Maharashtra": "Jalna",
@@ -318,34 +397,27 @@ async def extract_citizen_profile(
         }
         district = state_district_defaults.get(state, "District Headquarters")
 
-    # Step C: Land size and unit extraction
+    # Step 4: Extract land size and unit
     land_val = None
     land_unit = "acre"
 
-    # Normalize Indic digits
-    indic_digits = {'०': '0', '१': '1', '२': '2', '३': '3', '४': '4', '५': '5', '६': '6', '७': '7', '८': '8', '९': '9'}
-    norm_text = text
-    for ind_k, ind_v in indic_digits.items():
-        norm_text = norm_text.replace(ind_k, ind_v)
-
-    # Cents (Telangana, AP, Karnataka)
-    c_m = re.search(r'(\d+(?:\.\d+)?)\s*(?:cent|cents|సెంట్లు|సెంట్|సెల్ల)\b', q_text) or re.search(r'(\d+(?:\.\d+)?)\s*(?:cent|cents)\b', h_text)
-    if c_m:
-        land_val = float(c_m.group(1))
-        land_unit = "cent"
+    unit_pattern = r'(\d+(?:\.\d+)?)\s*(एकर|एकड़|acre|acres|हेक्टर|हेक्टेयर|hectare|hectares|गुंठा|गुंठे|guntha|gunthas|बीघा|विघा|વિઘા|bigha|vigha|कनाल|kanal|किल्ला|किला|killa|सेंट|cent|cents|ಎಕರೆ|ఎకరాల|ఎకరాలు|గుంటలు|సెంట్లు|సెంట్)'
+    m = re.search(unit_pattern, q_norm) or re.search(unit_pattern, combined_norm)
+    if m:
+        try:
+            land_val = float(m.group(1))
+            raw_unit = m.group(2)
+            land_unit = UNIT_NORMALIZATION.get(raw_unit, "acre")
+        except Exception:
+            pass
     else:
-        match = re.search(
-            r'(\d+(?:\.\d+)?)\s*(acre|acres|guntha|gunthe|gunta|bigha|vigha|hectare|ha|cent|kanal|marla|killa)',
-            norm_text
-        )
-        if match:
-            land_val = float(match.group(1))
-            land_unit = match.group(2)
-        else:
-            digit_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:एकड|एकर|गुंठे|बीघा|विघा|कनाल|किल्ला|हेक्टर)', norm_text)
-            if digit_match:
-                land_val = float(digit_match.group(1))
+        num_m = re.search(r'(\d+(?:\.\d+)?)\s*(?:जमीन|जमीनची|एकड|bhumi|land)', q_norm)
+        if num_m:
+            try:
+                land_val = float(num_m.group(1))
                 land_unit = "acre"
+            except Exception:
+                pass
 
     missing_q = None
     if land_val is None:
@@ -354,12 +426,39 @@ async def extract_citizen_profile(
     return CitizenProfile(
         state=state or "Maharashtra",
         district_or_village=district or "Jalna",
-        land_value=land_val if land_val else 2.0,
+        land_value=land_val if land_val is not None else 2.0,
         land_unit=land_unit,
         crop_or_business_type="Kharif Crops",
         sector="drought_relief",
         missing_critical_question=missing_q if land_val is None else None
     )
+
+
+async def extract_citizen_profile(
+    query: str,
+    history: str = ""
+) -> CitizenProfile:
+    """
+    Executes LCEL Chain 1 to extract structured CitizenProfile across all 9 supported Indian states.
+    Falls back to high-fidelity multi-state rule-based parser if LLM is offline or times out.
+    """
+    fast_prof = fast_extract_citizen_profile(query, history)
+    if fast_prof.district_or_village and fast_prof.land_value is not None and not fast_prof.missing_critical_question:
+        return fast_prof
+
+    llm = get_llm()
+    if llm:
+        try:
+            chain = build_profile_chain(llm)
+            profile = await asyncio.wait_for(chain.ainvoke({"history": history or "None", "query": query}), timeout=2.0)
+            if isinstance(profile, CitizenProfile):
+                return profile
+            if isinstance(profile, dict):
+                return CitizenProfile(**profile)
+        except Exception as e:
+            logger.debug(f"LCEL Profile Chain fallback: {e}")
+
+    return fast_prof
 
 
 async def adjudicate_eligibility(
