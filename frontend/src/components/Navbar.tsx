@@ -1,21 +1,15 @@
 import React from 'react';
 import {
-  Radio,
-  Database,
   Activity
 } from 'lucide-react';
 import type { SystemHealth } from '../types';
 
 interface NavbarProps {
-  activeTab: 'console' | 'ingestion';
-  setActiveTab: (tab: 'console' | 'ingestion') => void;
   health: SystemHealth | null;
   isLiveConnected: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
-  activeTab,
-  setActiveTab,
   health,
   isLiveConnected,
 }) => {
@@ -84,32 +78,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Center: View Switcher Tabs */}
-          <div className="hidden md:flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200">
-            <button
-              onClick={() => setActiveTab('console')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
-                activeTab === 'console'
-                  ? 'bg-white text-blue-950 shadow-xs border border-slate-200/80'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Radio className="w-3.5 h-3.5 text-blue-800" />
-              <span>Voice &amp; Scheme Console</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('ingestion')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
-                activeTab === 'ingestion'
-                  ? 'bg-white text-blue-950 shadow-xs border border-slate-200/80'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Database className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Mandate Ingestion &amp; Qdrant</span>
-            </button>
-          </div>
-
           {/* Right: Live Status & Engine Connection */}
           <div className="flex items-center gap-2.5">
             {/* System Health Status */}
@@ -140,32 +108,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="sm:hidden">Active</span>
             </div>
           </div>
-        </div>
-
-        {/* Mobile View Switcher Tabs Bar */}
-        <div className="flex md:hidden border-t border-slate-200 bg-slate-50 px-3 py-1.5 items-center justify-center gap-2">
-          <button
-            onClick={() => setActiveTab('console')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-1 rounded-lg text-xs font-semibold ${
-              activeTab === 'console'
-                ? 'bg-white text-blue-900 shadow-xs border border-slate-200'
-                : 'text-slate-600'
-            }`}
-          >
-            <Radio className="w-3.5 h-3.5 text-blue-800" />
-            <span>Voice Console</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('ingestion')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-1 rounded-lg text-xs font-semibold ${
-              activeTab === 'ingestion'
-                ? 'bg-white text-blue-900 shadow-xs border border-slate-200'
-                : 'text-slate-600'
-            }`}
-          >
-            <Database className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Ingestion</span>
-          </button>
         </div>
       </header>
     </>
