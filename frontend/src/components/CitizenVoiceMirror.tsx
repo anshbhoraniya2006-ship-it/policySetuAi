@@ -1,16 +1,18 @@
-import React, { useState, useRef } from 'react';
-import { 
-  Mic, 
-  Square, 
-  Send, 
-  MapPin, 
-  Play, 
-  Pause, 
-  RotateCcw, 
-  CheckCircle2, 
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import {
+  Mic,
+  Square,
+  Send,
+  MapPin,
+  Play,
+  Pause,
+  RotateCcw,
+  CheckCircle2,
   Sparkles,
-  ExternalLink,
-  Radio
+  Volume2,
+  VolumeX,
+  Clock,
+  FileCheck
 } from 'lucide-react';
 import type { TelemetryEvent } from '../types';
 import { submitTextQuery, submitVoiceUpload, resolveAudioUrl } from '../services/api';
@@ -30,40 +32,64 @@ export const CitizenVoiceMirror: React.FC<CitizenVoiceMirrorProps> = ({
   setIsLoading,
   onResetSession,
 }) => {
-  const [inputText, setInputText] = useState('');
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const [isPlayingOutbound, setIsPlayingOutbound] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState<boolean>(true);
+  const [inputText, setInputText] = useState<string>('');
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
+
+  // Playback state toggles (progress is driven by requestAnimationFrame directly on DOM refs)
+  const [isPlayingOutbound, setIsPlayingOutbound] = useState<boolean>(false);
+  const [isPlayingUserAudio, setIsPlayingUserAudio] = useState<boolean>(false);
   const [audioSpeed, setAudioSpeed] = useState<number>(1);
+  const [userAudioUrl, setUserAudioUrl] = useState<string | null>(null);
+
   const [coords, setCoords] = useState<{ lat?: number; lon?: number }>({});
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [gpsDetecting, setGpsDetecting] = useState<boolean>(false);
+
+  // High-performance DOM Refs for 60fps animations
+  const aiProgressBarRef = useRef<HTMLDivElement | null>(null);
+  const aiProgressStatusRef = useRef<HTMLSpanElement | null>(null);
+  const aiAnimationIdRef = useRef<number | null>(null);
+
+  const userProgressBarRef = useRef<HTMLDivElement | null>(null);
+  const userProgressStatusRef = useRef<HTMLSpanElement | null>(null);
+  const userAnimationIdRef = useRef<number | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<number | null>(null);
   const outboundAudioRef = useRef<HTMLAudioElement | null>(null);
+  const userAudioRef = useRef<HTMLAudioElement | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
-  // Quick Demo Presets for Hackathon Judges
-  const samplePresets = [
-    {
-      label: '🌾 Jalna (Marathi)',
-      text: 'माझ्याकडे जालन्यात २ एकर जमीन आहे, मला दुष्काळ निधी मिळेल का?',
-      district: 'Jalna, Maharashtra'
-    },
-    {
-      label: '🌱 Gujarat MMKSY',
-      text: 'મારા પાસે રાજકોટમાં ૪ હેક્ટર જમીન છે, મુખ્યમંત્રી કિસાન સહાય યોજના મળશે?',
-      district: 'Rajkot, Gujarat'
-    },
-    {
-      label: '🌿 Beed Soyabean',
-      text: 'बीड जिल्ह्यात अतिवृष्टीमुळे सोयाबीन पिकाचे नुकसान झाले आहे, कोणती मदत मिळेल?',
-      district: 'Beed, Maharashtra'
+  // Auto-scroll chat to bottom on new event
+  useEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }
-  ];
+  }, [currentEvent, isLoading]);
 
-  // Browser Geolocation
+  // Clean up animation frames & audio on unmount
+  useEffect(() => {
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (aiAnimationIdRef.current) cancelAnimationFrame(aiAnimationIdRef.current);
+      if (userAnimationIdRef.current) cancelAnimationFrame(userAnimationIdRef.current);
+      if (outboundAudioRef.current) {
+        outboundAudioRef.current.pause();
+        outboundAudioRef.current.currentTime = 0;
+      }
+      if (userAudioRef.current) {
+        userAudioRef.current.pause();
+        userAudioRef.current.currentTime = 0;
+      }
+    };
+  }, []);
+
+  // Geolocation trigger
   const handleGetLocation = () => {
+    setGpsDetecting(true);
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
@@ -71,15 +97,19 @@ export const CitizenVoiceMirror: React.FC<CitizenVoiceMirrorProps> = ({
             lat: pos.coords.latitude,
             lon: pos.coords.longitude,
           });
+          setGpsDetecting(false);
         },
         () => {
-          setCoords({ lat: 19.9188, lon: 75.8708 }); // Default to Jalna
-        }
+          setGpsDetecting(false);
+        },
+        { timeout: 6000 }
       );
+    } else {
+      setGpsDetecting(false);
     }
   };
 
-  // Start Mic Recording
+  // Mic Recording
   const startRecording = async () => {
     setErrorMessage(null);
     try {
@@ -89,13 +119,13 @@ export const CitizenVoiceMirror: React.FC<CitizenVoiceMirrorProps> = ({
       audioChunksRef.current = [];
 
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          audioChunksRef.current.push(e.data);
-        }
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
       };
 
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        const localBlobUrl = URL.createObjectURL(audioBlob);
+        setUserAudioUrl(localBlobUrl);
         setIsLoading(true);
         try {
           const result = await submitVoiceUpload(audioBlob);
@@ -119,18 +149,15 @@ export const CitizenVoiceMirror: React.FC<CitizenVoiceMirrorProps> = ({
     }
   };
 
-  // Stop Mic Recording
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
-      }
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     }
   };
 
-  // Handle Text Submit
+  // Submit Query
   const handleSendText = async (textToSend?: string) => {
     const query = textToSend || inputText;
     if (!query.trim()) return;
@@ -153,443 +180,518 @@ export const CitizenVoiceMirror: React.FC<CitizenVoiceMirrorProps> = ({
     }
   };
 
-  const speakWithBrowser = (text?: string) => {
-    if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      setIsPlayingOutbound(false);
-      return;
+  // Reset Session
+  const handleReset = () => {
+    setInputText('');
+    setErrorMessage(null);
+    setUserAudioUrl(null);
+    if (aiAnimationIdRef.current) cancelAnimationFrame(aiAnimationIdRef.current);
+    if (userAnimationIdRef.current) cancelAnimationFrame(userAnimationIdRef.current);
+    if (aiProgressBarRef.current) aiProgressBarRef.current.style.width = '0%';
+    if (userProgressBarRef.current) userProgressBarRef.current.style.width = '0%';
+    if (outboundAudioRef.current) {
+      outboundAudioRef.current.pause();
+      outboundAudioRef.current.currentTime = 0;
     }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = audioSpeed;
-    if (currentEvent?.language_code) {
-      utterance.lang = currentEvent.language_code;
+    if (userAudioRef.current) {
+      userAudioRef.current.pause();
+      userAudioRef.current.currentTime = 0;
     }
-    utterance.onend = () => setIsPlayingOutbound(false);
-    utterance.onerror = () => setIsPlayingOutbound(false);
-    setIsPlayingOutbound(true);
-    window.speechSynthesis.speak(utterance);
+    setIsPlayingOutbound(false);
+    setIsPlayingUserAudio(false);
+    onResetSession();
   };
 
-  // Toggle Outbound Audio Playback with Web Speech API Graceful Fallback
+  // 60FPS Fluid User Audio Playback Animation (via requestAnimationFrame)
+  const stopUserAudioAnimation = useCallback(() => {
+    if (userAnimationIdRef.current) {
+      cancelAnimationFrame(userAnimationIdRef.current);
+      userAnimationIdRef.current = null;
+    }
+    if (userAudioRef.current) userAudioRef.current.pause();
+    setIsPlayingUserAudio(false);
+  }, []);
+
+  const startUserAudioAnimation = useCallback(() => {
+    if (userAnimationIdRef.current) cancelAnimationFrame(userAnimationIdRef.current);
+    setIsPlayingUserAudio(true);
+    if (userProgressStatusRef.current) {
+      userProgressStatusRef.current.textContent = 'Playing Citizen Audio...';
+    }
+
+    const duration = 4000;
+    const startTime = performance.now();
+
+    const animate = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min((elapsed / duration) * 100, 100);
+
+      if (userProgressBarRef.current) {
+        userProgressBarRef.current.style.width = `${progress}%`;
+      }
+
+      if (progress < 100) {
+        userAnimationIdRef.current = requestAnimationFrame(animate);
+      } else {
+        setIsPlayingUserAudio(false);
+        userAnimationIdRef.current = null;
+        if (userProgressStatusRef.current) {
+          userProgressStatusRef.current.textContent = 'Finished';
+        }
+      }
+    };
+
+    userAnimationIdRef.current = requestAnimationFrame(animate);
+  }, []);
+
+  const togglePlayUserAudio = () => {
+    if (isPlayingUserAudio) {
+      stopUserAudioAnimation();
+      if (userProgressStatusRef.current) {
+        userProgressStatusRef.current.textContent = 'Paused';
+      }
+      return;
+    }
+
+    const effectiveAudioUrl =
+      userAudioUrl ||
+      (currentEvent?.incoming_audio_url
+        ? resolveAudioUrl(currentEvent.incoming_audio_url)
+        : null);
+
+    if (userAudioRef.current && effectiveAudioUrl) {
+      userAudioRef.current.pause();
+      userAudioRef.current.currentTime = 0;
+      userAudioRef.current
+        .play()
+        .then(() => startUserAudioAnimation())
+        .catch(() => startUserAudioAnimation());
+      return;
+    }
+
+    startUserAudioAnimation();
+  };
+
+  // 60FPS Fluid AI Outbound Playback Animation (via requestAnimationFrame)
+  const stopAIAnimation = useCallback(() => {
+    if (aiAnimationIdRef.current) {
+      cancelAnimationFrame(aiAnimationIdRef.current);
+      aiAnimationIdRef.current = null;
+    }
+    if (outboundAudioRef.current) {
+      outboundAudioRef.current.pause();
+    }
+    setIsPlayingOutbound(false);
+  }, []);
+
+  const startAIAnimation = useCallback((durationMs: number) => {
+    if (aiAnimationIdRef.current) cancelAnimationFrame(aiAnimationIdRef.current);
+    setIsPlayingOutbound(true);
+    if (aiProgressStatusRef.current) {
+      aiProgressStatusRef.current.textContent = 'Playing Vernacular Audio...';
+    }
+
+    const effectiveDuration = durationMs / audioSpeed;
+    const startTime = performance.now();
+
+    const animate = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min((elapsed / effectiveDuration) * 100, 100);
+
+      if (aiProgressBarRef.current) {
+        aiProgressBarRef.current.style.width = `${progress}%`;
+      }
+
+      if (progress < 100) {
+        aiAnimationIdRef.current = requestAnimationFrame(animate);
+      } else {
+        setIsPlayingOutbound(false);
+        aiAnimationIdRef.current = null;
+        if (aiProgressStatusRef.current) {
+          aiProgressStatusRef.current.textContent = 'Finished';
+        }
+      }
+    };
+
+    aiAnimationIdRef.current = requestAnimationFrame(animate);
+  }, [audioSpeed]);
+
   const togglePlayOutbound = () => {
-    const textToSpeak = currentEvent?.verdict?.local_language_script || currentEvent?.verdict?.english_voice_script;
+    if (!voiceEnabled) return;
 
     if (isPlayingOutbound) {
-      if (outboundAudioRef.current) {
-        outboundAudioRef.current.pause();
+      stopAIAnimation();
+      if (aiProgressStatusRef.current) {
+        aiProgressStatusRef.current.textContent = 'Paused';
       }
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-      setIsPlayingOutbound(false);
       return;
     }
 
-    if (outboundAudioRef.current && currentEvent?.outbound_audio_url) {
-      outboundAudioRef.current.playbackRate = audioSpeed;
-      outboundAudioRef.current.play().then(() => {
-        setIsPlayingOutbound(true);
-      }).catch((err) => {
-        console.warn("Audio file playback interrupted or unavailable, falling back to Web Speech:", err);
-        speakWithBrowser(textToSpeak);
-      });
-      return;
-    }
-
-    // Direct browser speech fallback if audio file is still loading or unavailable
-    speakWithBrowser(textToSpeak);
-  };
-
-  // Speed Toggle
-  const toggleAudioSpeed = () => {
-    const newSpeed = audioSpeed === 1 ? 1.25 : audioSpeed === 1.25 ? 1.5 : 1;
-    setAudioSpeed(newSpeed);
+    // Always pause and reset any existing audio before starting new playback
     if (outboundAudioRef.current) {
-      outboundAudioRef.current.playbackRate = newSpeed;
+      outboundAudioRef.current.pause();
+      outboundAudioRef.current.currentTime = 0;
+      outboundAudioRef.current.playbackRate = audioSpeed;
+      outboundAudioRef.current
+        .play()
+        .then(() => startAIAnimation(6000))
+        .catch(() => startAIAnimation(6000));
+      return;
+    }
+
+    // No audio element available — just run the animation
+    startAIAnimation(6000);
+  };
+
+  const cycleSpeed = () => {
+    const nextSpeed = audioSpeed === 1 ? 1.25 : audioSpeed === 1.25 ? 1.5 : 1;
+    setAudioSpeed(nextSpeed);
+    if (outboundAudioRef.current) {
+      outboundAudioRef.current.playbackRate = nextSpeed;
     }
   };
 
-  // Mask Phone Number for Display
-  const maskedPhone = currentEvent?.phone_number
-    ? currentEvent.phone_number.replace(/(\+91)(\d{5})(\d{5})/, '$1 ••••• •$3')
-    : '+91 ••••• •10478';
-
-  const languageLabel = currentEvent?.language_code
-    ? currentEvent.language_code === 'mr-IN'
-      ? 'mr-IN • Marathi'
-      : currentEvent.language_code === 'gu-IN'
-      ? 'gu-IN • Gujarati'
-      : currentEvent.language_code === 'hi-IN'
-      ? 'hi-IN • Hindi'
-      : `${currentEvent.language_code} • Regional`
-    : 'mr-IN • Marathi';
+  const nativeTranscript =
+    currentEvent?.native_transcript || '';
+  const englishTranslation =
+    currentEvent?.english_translation || '';
+  const speechText =
+    currentEvent?.verdict?.english_voice_script || '';
+  const schemeTitle =
+    currentEvent?.verdict?.scheme_name || '';
+  const isEligible = currentEvent?.verdict?.is_eligible ?? true;
+  const entitlement =
+    currentEvent?.verdict?.entitlement_summary || '';
+  const documents =
+    currentEvent?.verdict?.exact_three_documents &&
+      currentEvent.verdict.exact_three_documents.length > 0
+      ? currentEvent.verdict.exact_three_documents
+      : [];
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-elevated flex flex-col h-[820px] overflow-hidden">
-      {/* WhatsApp Window Header */}
-      <div className="px-4 py-3 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+    <div className="h-full flex flex-col min-h-0 bg-white/95 backdrop-blur-sm border border-slate-200/90 rounded-2xl shadow-elevated overflow-hidden transition-all duration-300 hover:shadow-ambient">
+      {/* Hidden Audio Elements for streaming */}
+      {currentEvent?.outbound_audio_url && (
+        <audio
+          ref={outboundAudioRef}
+          src={resolveAudioUrl(currentEvent.outbound_audio_url)}
+          onEnded={() => {
+            setIsPlayingOutbound(false);
+            if (aiProgressBarRef.current) aiProgressBarRef.current.style.width = '100%';
+            if (aiProgressStatusRef.current) aiProgressStatusRef.current.textContent = 'Finished';
+          }}
+          className="hidden"
+        />
+      )}
+      {(userAudioUrl || currentEvent?.incoming_audio_url) && (
+        <audio
+          ref={userAudioRef}
+          src={
+            userAudioUrl ||
+            (currentEvent?.incoming_audio_url
+              ? resolveAudioUrl(currentEvent.incoming_audio_url)
+              : undefined)
+          }
+          onEnded={() => {
+            setIsPlayingUserAudio(false);
+            if (userProgressBarRef.current) userProgressBarRef.current.style.width = '100%';
+            if (userProgressStatusRef.current) userProgressStatusRef.current.textContent = 'Finished';
+          }}
+          className="hidden"
+        />
+      )}
+
+      {/* WhatsApp-Style Fixed Chat Header (Cleaned: NO language dropdown or badge) */}
+      <div className="shrink-0 bg-sunrise-saffron border-b-2 border-orange-500/90 px-4 py-3 sm:px-5 flex items-center justify-between gap-3 shadow-xs z-10">
+        {/* Left: Assistant Identity */}
         <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-sm shadow-sm ring-2 ring-emerald-400/40">
-              🇮🇳
-            </div>
-            <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-400 border-2 border-slate-900 rounded-full" />
+          <div className="w-9 h-9 rounded-xl bg-white border border-orange-300 text-orange-600 flex items-center justify-center text-lg shadow-xs transition-transform hover:scale-105">
+            🎙️
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-mono text-xs font-semibold tracking-wide text-slate-100">
-                {maskedPhone}
-              </span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-950 text-emerald-400 border border-emerald-800">
-                WhatsApp Native
+              <h2 className="text-sm font-extrabold text-slate-900 tracking-tight">
+                Citizen Voice Assistant
+              </h2>
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white text-emerald-800 border border-emerald-300 shadow-2xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Ready
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
-              <span>{languageLabel}</span>
-              <span>•</span>
-              <span className="text-emerald-400">Live Webhook Synced</span>
+            <p className="text-[11px] font-semibold text-orange-950/80">
+              Multilingual Scheme Guidance • Sarvam Saaras AI
             </p>
           </div>
         </div>
 
-        <button
-          onClick={onResetSession}
-          title="Reset Active Session"
-          className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors text-xs flex items-center gap-1"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline text-[11px]">Reset</span>
-        </button>
-      </div>
-
-      {/* WhatsApp Chat Stream Container */}
-      <div 
-        className="flex-1 p-4 overflow-y-auto space-y-4 bg-[#EFEAE2]/30"
-        style={{
-          backgroundImage: `radial-gradient(#CBD5E1 0.75px, transparent 0.75px)`,
-          backgroundSize: '16px 16px',
-        }}
-      >
-        {/* Waiting / Empty Skeleton State */}
-        {!currentEvent && !isLoading && (
-          <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
-            <div className="relative">
-              <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200 shadow-md flex items-center justify-center text-blue-900">
-                <Radio className="w-8 h-8 text-blue-800 animate-pulse" />
-              </div>
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-white animate-ping" />
-            </div>
-            <div className="max-w-xs space-y-1">
-              <h4 className="text-sm font-bold text-slate-900">
-                Waiting for Live Voice Stream
-              </h4>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Send an audio voice note to Twilio WhatsApp Sandbox, or click any sample prompt below to run live on stage.
-              </p>
-            </div>
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-slate-200 shadow-sm text-xs font-mono text-slate-700">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>FastAPI Port 8000: Listening</span>
-            </div>
-          </div>
-        )}
-
-        {/* Loading Spinner Skeleton */}
-        {isLoading && (
-          <div className="flex flex-col items-center justify-center py-12 space-y-3">
-            <div className="w-10 h-10 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-            <p className="text-xs font-medium text-slate-600 animate-pulse">
-              Executing 6-Stage Indic Speech RAG Pipeline...
-            </p>
-          </div>
-        )}
-
-        {/* Active Query Messages Stream */}
-        {currentEvent && (
-          <>
-            {/* Timestamp Badge */}
-            <div className="flex justify-center">
-              <span className="px-2.5 py-1 rounded-full bg-white/80 border border-slate-200 text-[10px] font-medium text-slate-500 shadow-sm font-mono">
-                {currentEvent.timestamp ? `Today • ${currentEvent.timestamp.slice(11, 16)}` : 'Live WhatsApp Voice Session'}
-              </span>
-            </div>
-
-            {/* 1. Incoming Citizen Message (User Bubble - Right Aligned) */}
-            <div className="flex justify-end">
-              <div className="max-w-[85%] bg-[#D9FDD3] text-slate-900 rounded-2xl rounded-tr-sm p-3.5 shadow-sm border border-emerald-200/60 space-y-2.5">
-                {/* Voice Note Audio Bar */}
-                <div className="flex items-center gap-3 bg-white/70 px-3 py-2 rounded-xl border border-emerald-200/50">
-                  <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                    <Mic className="w-4 h-4" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-1 h-4">
-                      {[40, 75, 55, 90, 60, 30, 80, 50, 95, 45, 65, 35, 70, 85].map((h, i) => (
-                        <span
-                          key={i}
-                          className="w-1 bg-emerald-600 rounded-full"
-                          style={{ height: `${h}%` }}
-                        />
-                      ))}
-                    </div>
-                    <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mt-1">
-                      <span>0:04</span>
-                      <span>Opus 24kHz</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Dual Transcript Card */}
-                <div className="space-y-1.5 pt-1">
-                  <div>
-                    <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">
-                      Native Dialect Transcript ({currentEvent.language_code})
-                    </span>
-                    <p className="text-xs font-indic font-medium text-slate-900 mt-0.5">
-                      "{currentEvent.native_transcript}"
-                    </p>
-                  </div>
-
-                  <div className="border-t border-emerald-200/50 pt-1.5">
-                    <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block">
-                      Normalized English Query
-                    </span>
-                    <p className="text-xs text-slate-700 italic mt-0.5">
-                      "{currentEvent.english_translation}"
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 2. Outbound AI Reply Bubble 1: Playable Localized Voice Note */}
-            <div className="flex justify-start">
-              <div className="max-w-[88%] bg-white text-slate-900 rounded-2xl rounded-tl-sm p-3.5 shadow-sm border border-slate-200 space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span className="text-xs font-bold text-blue-900">
-                      Policy-Setu AI Voice Response
-                    </span>
-                  </div>
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-blue-50 text-blue-800 font-semibold border border-blue-200">
-                    gTTS / Bulbul
-                  </span>
-                </div>
-
-                {/* Localized Voice Note Player */}
-                <div className="flex items-center gap-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                  <button
-                    onClick={togglePlayOutbound}
-                    className="w-9 h-9 rounded-full bg-blue-900 hover:bg-blue-800 text-white flex items-center justify-center shrink-0 shadow-sm transition-transform active:scale-95"
-                  >
-                    {isPlayingOutbound ? (
-                      <Pause className="w-4 h-4" />
-                    ) : (
-                      <Play className="w-4 h-4 ml-0.5" />
-                    )}
-                  </button>
-
-                  <div className="flex-1">
-                    {/* Visualizer Wave */}
-                    <div className="flex items-center gap-1 h-5">
-                      {[30, 60, 90, 45, 75, 100, 50, 80, 65, 40, 85, 95, 35, 70, 55, 90, 45, 60].map((h, i) => (
-                        <span
-                          key={i}
-                          className={`w-1 rounded-full transition-all duration-200 ${
-                            isPlayingOutbound
-                              ? 'bg-blue-800 animate-audio-bar'
-                              : 'bg-slate-300'
-                          }`}
-                          style={{
-                            height: isPlayingOutbound ? undefined : `${h}%`,
-                            animationDelay: `${(i * 0.08).toFixed(2)}s`
-                          }}
-                        />
-                      ))}
-                    </div>
-                    <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mt-1">
-                      <span>Regional Audio Response</span>
-                      <button
-                        onClick={toggleAudioSpeed}
-                        className="px-1 py-0.5 rounded bg-slate-200 hover:bg-slate-300 font-bold text-[9px] text-slate-700"
-                      >
-                        {audioSpeed}x
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Spoken Script Preview */}
-                <p className="text-xs font-indic text-slate-800 leading-relaxed bg-slate-50/60 p-2.5 rounded-lg border border-slate-100">
-                  {currentEvent.verdict?.local_language_script || currentEvent.verdict?.english_voice_script}
-                </p>
-
-                {/* Hidden Audio Element */}
-                {currentEvent.outbound_audio_url && (
-                  <audio
-                    ref={outboundAudioRef}
-                    src={resolveAudioUrl(currentEvent.outbound_audio_url)}
-                    onEnded={() => setIsPlayingOutbound(false)}
-                    onError={() => setIsPlayingOutbound(false)}
-                  />
-                )}
-              </div>
-            </div>
-
-            {/* 3. Outbound AI Reply Bubble 2: Visual 3-Document Checklist & CSC Pin */}
-            <div className="flex justify-start">
-              <div className="max-w-[88%] bg-white text-slate-900 rounded-2xl rounded-tl-sm p-4 shadow-sm border border-slate-200 space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <span className="text-xs font-bold text-slate-900">
-                    {currentEvent.verdict?.scheme_name}
-                  </span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                    ELIGIBLE
-                  </span>
-                </div>
-
-                {/* Estimated Entitlement Highlight */}
-                <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-2.5 flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] font-semibold text-emerald-800 block">
-                      अंदाजे भरपाई / Entitlement
-                    </span>
-                    <span className="text-xs font-bold font-mono text-emerald-950">
-                      {currentEvent.verdict?.entitlement_summary}
-                    </span>
-                  </div>
-                  <Sparkles className="w-4 h-4 text-emerald-600" />
-                </div>
-
-                {/* Exact 3 Documents Checklist */}
-                <div className="space-y-1.5">
-                  <span className="text-[11px] font-bold text-slate-800 block">
-                    आवश्यक ३ कागदपत्रे / 3 Required Documents:
-                  </span>
-                  {currentEvent.verdict?.exact_three_documents?.map((doc, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-start gap-2 p-1.5 rounded-lg bg-slate-50 border border-slate-150 text-xs text-slate-800"
-                    >
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                      <span className="font-medium text-[11px]">{doc}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Nearest CSC Centre */}
-                {currentEvent.csc_center && (
-                  <div className="pt-2 border-t border-slate-100">
-                    <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block">
-                      जवळचे सेवा केंद्र / Nearest CSC
-                    </span>
-                    <div className="flex items-center justify-between mt-1 text-xs">
-                      <span className="font-semibold text-slate-900 truncate">
-                        {currentEvent.csc_center.center_name}
-                      </span>
-                      {currentEvent.csc_center.google_maps_url && (
-                        <a
-                          href={currentEvent.csc_center.google_maps_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-[11px] text-blue-700 hover:text-blue-900 font-semibold ml-2 shrink-0"
-                        >
-                          <span>Directions</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Preset Chips Bar for Judges on Stage */}
-      <div className="px-3 py-2 bg-slate-50 border-t border-slate-200 overflow-x-auto flex items-center gap-1.5">
-        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1">
-          Judge Presets:
-        </span>
-        {samplePresets.map((preset, idx) => (
-          <button
-            key={idx}
-            disabled={isLoading}
-            onClick={() => handleSendText(preset.text)}
-            className="px-2.5 py-1 rounded-lg bg-white hover:bg-blue-50 border border-slate-200 text-slate-700 hover:text-blue-900 text-[11px] font-medium shrink-0 transition-colors shadow-2xs disabled:opacity-50"
-          >
-            {preset.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Bottom Input Action Bar */}
-      <div className="p-3 bg-white border-t border-slate-200 space-y-2">
-        {errorMessage && (
-          <p className="text-[11px] text-rose-600 bg-rose-50 px-2 py-1 rounded border border-rose-200">
-            {errorMessage}
-          </p>
-        )}
-
+        {/* Right: Voice Pill & Reset Only */}
         <div className="flex items-center gap-2">
-          {/* Geolocation Button */}
+          {/* Voice Mode Toggle Pill */}
           <button
-            onClick={handleGetLocation}
-            title={coords.lat ? `GPS: ${coords.lat.toFixed(4)}, ${coords.lon?.toFixed(4)}` : 'Share Browser GPS'}
-            className={`p-2 rounded-xl border transition-colors ${
-              coords.lat
-                ? 'bg-blue-50 text-blue-900 border-blue-300'
-                : 'bg-slate-50 text-slate-500 hover:text-slate-800 border-slate-200'
-            }`}
+            onClick={() => setVoiceEnabled(!voiceEnabled)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shadow-2xs ${voiceEnabled
+                ? 'bg-white text-emerald-800 border border-emerald-300 hover:bg-emerald-50'
+                : 'bg-slate-100 text-slate-600 border border-slate-300 hover:bg-slate-200'
+              }`}
+            title="Toggle Voice Output"
           >
-            <MapPin className="w-4 h-4" />
-          </button>
-
-          {/* Text Input */}
-          <input
-            type="text"
-            value={inputText}
-            disabled={isLoading || isRecording}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSendText()}
-            placeholder="Type or speak query in Marathi, Hindi, Gujarati..."
-            className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-800/20 focus:border-blue-800"
-          />
-
-          {/* Send Text Button */}
-          {inputText.trim() && (
-            <button
-              onClick={() => handleSendText()}
-              disabled={isLoading}
-              className="p-2 rounded-xl bg-blue-900 hover:bg-blue-800 text-white shadow-sm transition-transform active:scale-95"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          )}
-
-          {/* Browser MediaRecorder Mic Button */}
-          <button
-            onClick={isRecording ? stopRecording : startRecording}
-            disabled={isLoading}
-            className={`p-2.5 rounded-xl transition-all shadow-sm flex items-center gap-1.5 ${
-              isRecording
-                ? 'bg-rose-600 hover:bg-rose-700 text-white animate-pulse'
-                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-            }`}
-          >
-            {isRecording ? (
+            {voiceEnabled ? (
               <>
-                <Square className="w-4 h-4 fill-white" />
-                <span className="text-[11px] font-mono font-bold">{recordingSeconds}s</span>
+                <Volume2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Voice: <strong className="text-emerald-700">ON</strong></span>
               </>
             ) : (
-              <Mic className="w-4 h-4" />
+              <>
+                <VolumeX className="w-3.5 h-3.5 text-slate-500" />
+                <span>Voice: <strong className="text-slate-600">OFF</strong></span>
+              </>
             )}
           </button>
+
+          {/* Reset Button */}
+          <button
+            onClick={handleReset}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/90 hover:bg-orange-100 border border-orange-300 text-orange-950 text-xs font-bold shadow-2xs transition-all hover:border-orange-400 active:scale-95"
+            title="Reset Session"
+          >
+            <RotateCcw className="w-3 h-3 text-orange-700" />
+            <span>Reset</span>
+          </button>
         </div>
+      </div>
+
+      {/* The ONLY Scrollable Chat Body */}
+      <div
+        ref={chatScrollRef}
+        className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 bg-chat-pattern flex flex-col gap-4"
+      >
+        {/* Session Time Badge */}
+        <div className="self-center inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/90 border border-slate-200 shadow-2xs text-[10px] font-semibold text-slate-500">
+          <Clock className="w-3 h-3 text-slate-400" />
+          <span>Today • Live Vernacular Session</span>
+        </div>
+
+        {/* Citizen Voice Note (User Bubble with 60FPS Fluid Audio Player) */}
+        <div className="animate-slide-up self-end max-w-[92%] sm:max-w-[85%] bg-indigo-50/90 border border-indigo-200/90 rounded-2xl rounded-tr-xs p-3.5 sm:p-4 shadow-sm transition-all hover:shadow-md">
+          {/* User Audio Player Bar */}
+          <div className="bg-white/90 border border-indigo-200/80 rounded-xl p-2.5 flex items-center gap-3 mb-2.5 shadow-2xs">
+            <button
+              onClick={togglePlayUserAudio}
+              className="w-8 h-8 rounded-full bg-indigo-900 hover:bg-indigo-800 text-white flex items-center justify-center text-xs shadow-xs transition-transform active:scale-90"
+              title={isPlayingUserAudio ? 'Pause User Recording' : 'Play User Recording'}
+            >
+              {isPlayingUserAudio ? (
+                <Pause className="w-3.5 h-3.5 fill-current" />
+              ) : (
+                <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+              )}
+            </button>
+
+            <div className="flex-1">
+              {/* 60FPS Fluid Progress Bar */}
+              <div className="h-1.5 w-full bg-indigo-100 rounded-full overflow-hidden">
+                <div
+                  ref={userProgressBarRef}
+                  className="h-full bg-indigo-900 rounded-full will-change-[width]"
+                  style={{ width: '0%' }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mt-1">
+                <span ref={userProgressStatusRef}>User Voice Message</span>
+                <span className="font-semibold text-indigo-900">0:04</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Transcript Box */}
+          <div className="bg-white/95 rounded-xl p-3 border border-indigo-100 shadow-inner">
+            <div className="text-[9px] font-bold text-indigo-900 uppercase tracking-wider mb-1 flex items-center justify-between">
+              <span>Citizen Transcript</span>
+              <span className="text-[10px]">🎙️</span>
+            </div>
+            <p className="font-indic text-sm font-semibold text-slate-900 leading-snug">
+              &ldquo;{nativeTranscript}&rdquo;
+            </p>
+            <p className="text-xs text-slate-500 italic mt-1.5 pt-1.5 border-t border-dashed border-slate-200">
+              &ldquo;{englishTranslation}&rdquo;
+            </p>
+          </div>
+        </div>
+
+        {/* Outbound AI Voice Response Bubble (60FPS Fluid Audio Player) */}
+        <div className="animate-slide-up self-start max-w-[94%] sm:max-w-[88%] bg-white/95 border border-slate-200 rounded-2xl rounded-tl-xs p-4 shadow-sm transition-all hover:shadow-md">
+          <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-100">
+            <span className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-blue-800" />
+              <span>Policy-Setu AI Voice Response</span>
+            </span>
+            <span className="text-[10px] font-mono text-slate-400">Sarvam Indic TTS</span>
+          </div>
+
+          {/* AI Audio Player Control Bar */}
+          <div className="bg-slate-50 border border-slate-200/90 rounded-xl p-2.5 flex items-center gap-3 mb-3">
+            <button
+              onClick={togglePlayOutbound}
+              disabled={!voiceEnabled}
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-xs transition-transform active:scale-90 ${voiceEnabled
+                  ? 'bg-blue-900 hover:bg-blue-800 hover:scale-105'
+                  : 'bg-slate-400 cursor-not-allowed'
+                }`}
+              title={isPlayingOutbound ? 'Pause Audio' : 'Play Audio'}
+            >
+              {isPlayingOutbound ? (
+                <Pause className="w-3.5 h-3.5 fill-current" />
+              ) : (
+                <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+              )}
+            </button>
+
+            <div className="flex-1">
+              {/* 60FPS Fluid Progress Bar */}
+              <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                <div
+                  ref={aiProgressBarRef}
+                  className="h-full bg-blue-900 rounded-full will-change-[width]"
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mt-1">
+                <span ref={aiProgressStatusRef}>Finished</span>
+                <button
+                  onClick={cycleSpeed}
+                  className="hover:text-blue-900 font-bold px-1.5 py-0.5 rounded bg-slate-200/70"
+                  title="Change playback speed"
+                >
+                  {audioSpeed}x
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Speech Text */}
+          <p className="font-indic text-xs sm:text-[13px] text-slate-800 leading-relaxed">
+            {speechText}
+          </p>
+        </div>
+
+        {/* Vernacular Checklist Bubble */}
+        <div className="animate-slide-up self-start max-w-[94%] sm:max-w-[88%] bg-white/95 border border-emerald-300 rounded-2xl rounded-tl-xs p-4 shadow-sm transition-all hover:shadow-md">
+          {/* Scheme Header */}
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <span className="text-xs sm:text-sm font-extrabold text-emerald-950">
+              {schemeTitle}
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded text-[10px] font-extrabold tracking-wider uppercase shrink-0 ${isEligible
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  : 'bg-amber-100 text-amber-800 border border-amber-300'
+                }`}
+            >
+              {isEligible ? 'ELIGIBLE' : 'PENDING'}
+            </span>
+          </div>
+
+          {/* Entitlement Payout Box */}
+          <div className="bg-emerald-50/90 border border-emerald-200 rounded-xl p-3 flex items-center justify-between gap-3 mb-3">
+            <div>
+              <span className="text-[10px] font-bold text-emerald-900 block">
+                Estimated Entitlement
+              </span>
+              <span className="text-xs sm:text-sm font-mono font-extrabold text-emerald-800">
+                {entitlement}
+              </span>
+            </div>
+            <Sparkles className="w-5 h-5 text-emerald-600 shrink-0" />
+          </div>
+
+          {/* 3 Required Documents */}
+          <div>
+            <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5 mb-1.5">
+              <FileCheck className="w-3.5 h-3.5 text-emerald-700" />
+              <span>3 Documents Required:</span>
+            </span>
+            <div className="space-y-1.5">
+              {documents.map((doc, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center gap-2 text-xs text-slate-700 bg-slate-50/80 px-2.5 py-1.5 rounded-lg border border-slate-100"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span className="font-indic font-medium">{doc}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Error Notification */}
+        {errorMessage && (
+          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">
+            {errorMessage}
+          </div>
+        )}
+      </div>
+
+      {/* WhatsApp-Style Fixed Bottom Input Bar (Sticky + Safe Area Inset) */}
+      <div className="shrink-0 sticky bottom-0 z-20 bg-white/95 backdrop-blur-md border-t border-slate-200 p-3 sm:p-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center gap-2 sm:gap-3">
+        {/* Geolocation Button */}
+        <button
+          onClick={handleGetLocation}
+          disabled={gpsDetecting}
+          className="w-10 h-10 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-900 flex items-center justify-center text-sm shadow-xs transition-all active:scale-95 disabled:opacity-60 shrink-0"
+          title={`Detect Location (${coords.lat?.toFixed(2)}, ${coords.lon?.toFixed(2)})`}
+        >
+          {gpsDetecting ? (
+            <span className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <MapPin className="w-4 h-4 text-blue-800" />
+          )}
+        </button>
+
+        {/* Message Input Box */}
+        <input
+          type="text"
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleSendText();
+          }}
+          placeholder="Type or speak query in Marathi, Hindi, Gujarati..."
+          className="flex-1 min-w-0 bg-slate-50 focus:bg-white border border-slate-300 focus:border-blue-600 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 outline-none transition-all shadow-inner focus:ring-2 focus:ring-blue-100"
+        />
+
+        {/* Recording Mic Button */}
+        <button
+          onClick={isRecording ? stopRecording : startRecording}
+          className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-white shadow-xs transition-all active:scale-95 shrink-0 ${isRecording
+              ? 'bg-rose-600 hover:bg-rose-700 animate-mic-pulse'
+              : 'bg-emerald-600 hover:bg-emerald-700'
+            }`}
+          title={isRecording ? `Recording (${recordingSeconds}s)... Click to Stop` : 'Click to Speak'}
+        >
+          {isRecording ? (
+            <Square className="w-4 h-4 fill-current" />
+          ) : (
+            <Mic className="w-4 h-4" />
+          )}
+        </button>
+
+        {/* Send Button */}
+        <button
+          onClick={() => handleSendText()}
+          disabled={isLoading || !inputText.trim()}
+          className="w-10 h-10 rounded-xl bg-blue-900 hover:bg-blue-800 disabled:bg-slate-300 text-white flex items-center justify-center text-sm shadow-xs transition-all active:scale-95 disabled:cursor-not-allowed shrink-0"
+          title="Send Query"
+        >
+          {isLoading ? (
+            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <Send className="w-4 h-4 ml-0.5" />
+          )}
+        </button>
       </div>
     </div>
   );
 };
+
+export default CitizenVoiceMirror;

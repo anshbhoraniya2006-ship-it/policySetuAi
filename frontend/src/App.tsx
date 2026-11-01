@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import {
   Navbar,
   CitizenVoiceMirror,
-  RAGPipelineInspector,
-  LiveProofAndGIS,
+  CSCMapCard,
+  TelemetryCard,
   MandateIngestionView,
 } from './components';
 import type { TelemetryEvent, SystemHealth } from './types';
@@ -36,18 +36,16 @@ export function App() {
       try {
         const data = await fetchLatestTelemetry(5);
         if (isMounted && data.logs && data.logs.length > 0) {
-          // If user hasn't triggered a new query manually yet, pick the latest real event
           setCurrentEvent((prev) => prev || data.logs[0]);
         }
       } catch {
-        // Silently keep waiting
+        // Silently wait for backend
       }
     };
 
     checkSystemHealth();
     loadLatestTelemetry();
 
-    // 4-second polling to capture WhatsApp messages sent from phone in real-time
     const interval = setInterval(() => {
       checkSystemHealth();
       loadLatestTelemetry();
@@ -64,8 +62,8 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-blue-100 selection:text-blue-900">
-      {/* Top Navbar */}
+    <div className="h-screen flex flex-col bg-slate-50 overflow-hidden selection:bg-orange-100 selection:text-orange-900">
+      {/* Top Navbar (Fixed 67px height: 64px + 3px hairline) */}
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -73,13 +71,17 @@ export function App() {
         isLiveConnected={isLiveConnected}
       />
 
-      {/* Main Command Center Workspace */}
-      <main className="flex-1 max-w-[1720px] w-full mx-auto p-4 sm:p-6 lg:p-8">
+      {/* Main Workspace (Strictly fills exactly remaining height without any window scrollbar) */}
+      <main className="flex-1 h-[calc(100vh-67px)] w-full max-w-[1800px] mx-auto p-2.5 sm:p-3 lg:p-4 overflow-y-auto lg:overflow-hidden flex flex-col min-h-0">
         {activeTab === 'console' ? (
-          /* 12-Column Responsive Bento Grid */
-          <div className="grid grid-cols-12 gap-5 items-start">
-            {/* Left Column: Dual-Mode Citizen Voice Mirror (col-span-12 lg:col-span-4) */}
-            <div className="col-span-12 lg:col-span-4">
+          /* Strict 3-Tier Responsive Layout:
+             1. Mobile (< 768px): Vertical stack; chat takes full screen, cards scroll below
+             2. Tablet (768px - 1023px): Chat spans 100% width; CSC & Telemetry cards side-by-side in 2-cols below
+             3. Laptop/Desktop (>= 1024px): Exact screen height with ZERO right-side or page scrollbars
+          */
+          <div className="h-full flex-1 min-h-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-3 lg:gap-4 overflow-y-auto lg:overflow-hidden items-stretch">
+            {/* Left Column: WhatsApp-Style Citizen Voice Mirror */}
+            <div className="col-span-1 md:col-span-2 lg:col-span-8 h-[calc(100dvh-5.5rem)] md:h-[620px] lg:h-full min-h-0 flex flex-col overflow-hidden">
               <CitizenVoiceMirror
                 currentEvent={currentEvent}
                 onQueryExecuted={(event) => setCurrentEvent(event)}
@@ -89,34 +91,35 @@ export function App() {
               />
             </div>
 
-            {/* Center Column: 6-Stage AI Pipeline & Qdrant RAG Inspector (col-span-12 lg:col-span-5) */}
-            <div className="col-span-12 lg:col-span-5">
-              <RAGPipelineInspector currentEvent={currentEvent} />
-            </div>
+            {/* Right Column: Exactly fits remaining vertical space; NEVER triggers a scrollbar */}
+            <div className="col-span-1 md:col-span-2 lg:col-span-4 h-auto lg:h-full min-h-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3 overflow-hidden">
+              {/* Card 1: Nearest CSC Locator (flex-1) */}
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                <CSCMapCard
+                  csc={currentEvent?.csc_center}
+                  citizenProfile={currentEvent?.citizen_profile}
+                  isLoading={isLoading}
+                />
+              </div>
 
-            {/* Right Column: Live Public API Proof & GIS Locator (col-span-12 lg:col-span-3) */}
-            <div className="col-span-12 lg:col-span-3">
-              <LiveProofAndGIS currentEvent={currentEvent} />
+              {/* Card 2: Agro-Weather Telemetry (flex-1) */}
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                <TelemetryCard
+                  weather={currentEvent?.weather_data}
+                  verdict={currentEvent?.verdict}
+                  citizenProfile={currentEvent?.citizen_profile}
+                  isLoading={isLoading}
+                />
+              </div>
             </div>
           </div>
         ) : (
           /* Tab 2: Live Mandate Ingestion & Qdrant Indexer */
-          <MandateIngestionView />
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <MandateIngestionView />
+          </div>
         )}
       </main>
-
-      {/* DPI Hackathon Provenance Footer */}
-      <footer className="border-t border-slate-200 bg-white/80 py-3.5 px-4 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p className="flex items-center gap-1.5 font-medium text-slate-600">
-            <span>🇮🇳</span>
-            <span>Policy-Setu AI • Built for India Digital Public Infrastructure (DPI)</span>
-          </p>
-          <p className="text-[11px] text-slate-400 font-mono">
-            FastAPI Port 8000 • Qdrant Cloud (low-setu-project) • Open-Meteo & OpenStreetMap
-          </p>
-        </div>
-      </footer>
     </div>
   );
 }
