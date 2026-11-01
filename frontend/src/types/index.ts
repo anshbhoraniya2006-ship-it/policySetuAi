@@ -76,7 +76,7 @@ export interface SystemHealth {
   status: string;
   timestamp: number;
   services: {
-    twilio_configured: boolean;
+    twilio_configured?: boolean;
     sarvam_configured: boolean;
     gemini_configured: boolean;
     qdrant_configured: boolean;

@@ -85,7 +85,7 @@ export async function fetchLatestTelemetry(limit = 10): Promise<{ count: number;
 
 export async function submitTextQuery(
   queryText: string,
-  phoneNumber = 'whatsapp:+919510010478',
+  phoneNumber = 'web_citizen',
   latitude?: number,
   longitude?: number
 ): Promise<TelemetryEvent> {
@@ -110,10 +110,17 @@ export async function submitTextQuery(
 
 export async function submitVoiceUpload(
   audioBlob: Blob,
-  phoneNumber = 'whatsapp:+919510010478'
+  phoneNumber = 'web_citizen'
 ): Promise<TelemetryEvent> {
   const formData = new FormData();
-  formData.append('file', audioBlob, 'mic_recording.wav');
+  const ext = audioBlob.type.includes('webm')
+    ? 'webm'
+    : audioBlob.type.includes('ogg')
+    ? 'ogg'
+    : audioBlob.type.includes('mp4')
+    ? 'mp4'
+    : 'wav';
+  formData.append('file', audioBlob, `mic_recording.${ext}`);
   formData.append('phone_number', phoneNumber);
 
   const res = await fetch(`${API_BASE_URL}/test-voice-upload`, {
@@ -129,6 +136,10 @@ export async function submitVoiceUpload(
 
 export function resolveAudioUrl(urlPath?: string): string {
   if (!urlPath) return '';
+  // If it's a blob: or data: URL (e.g. user mic recording), return directly as-is!
+  if (urlPath.startsWith('blob:') || urlPath.startsWith('data:')) {
+    return urlPath;
+  }
   // If the backend returned a localhost/127.0.0.1 URL while running via Vite proxy or Render, normalize to relative path
   if (urlPath.includes('localhost:') || urlPath.includes('127.0.0.1:')) {
     const staticIdx = urlPath.indexOf('/static/audio/');
