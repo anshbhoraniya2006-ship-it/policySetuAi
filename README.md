@@ -1,6 +1,10 @@
 # 🇮🇳 PolicySetu AI (पॉलिसी-सेतू)
 ### Multilingual Policy & Scheme Explainer for Rural Citizens
-**Built for the NxtWave Launchpad Forge Hackathon**
+**A Sovereign Digital Public Infrastructure (DPI) Platform**
+
+[![Live Frontend](https://img.shields.io/badge/Frontend-Vercel%20Live-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://policy-setu-ai.vercel.app/)
+[![Live Backend](https://img.shields.io/badge/Backend-Render%20Live-46E3B7?style=for-the-badge&logo=render&logoColor=white)](https://policysetuai.onrender.com)
+[![API Docs](https://img.shields.io/badge/Swagger%20UI-API%20Docs-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://policysetuai.onrender.com/docs)
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111+-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
@@ -9,7 +13,17 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4+-06B6D4?style=flat&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![LangChain LCEL](https://img.shields.io/badge/LangChain-LCEL-1C3C3C?style=flat&logo=langchain&logoColor=white)](https://langchain.com)
 [![Qdrant Hybrid](https://img.shields.io/badge/Qdrant-Hybrid_RAG-DC2626?style=flat&logo=qdrant&logoColor=white)](https://qdrant.tech)
-[![Rule 4 Compliant](https://img.shields.io/badge/Rule_4-Zero_Dummy_Data-10B981?style=flat)](#rule-4-zero-dummy-data-compliance)
+
+---
+
+## 🌐 Live Deployments
+
+| Component | Platform | Live URL | Status |
+|---|---|---|---|
+| **Frontend Web App** | **Vercel** | **[https://policy-setu-ai.vercel.app/](https://policy-setu-ai.vercel.app/)** | 🟢 Live & Active |
+| **Backend API Server** | **Render** | **[https://policysetuai.onrender.com](https://policysetuai.onrender.com)** | 🟢 200 OK |
+| **Swagger API Documentation** | **Render** | **[https://policysetuai.onrender.com/docs](https://policysetuai.onrender.com/docs)** | 🟢 Interactive Docs |
+| **System Health Check** | **Render** | **[https://policysetuai.onrender.com/health](https://policysetuai.onrender.com/health)** | 🟢 HEALTHY |
 
 ---
 
@@ -25,7 +39,7 @@ A web-based Digital Public Infrastructure (DPI) conversational voice platform po
 3. **Live Public RAG & Telemetry:** Concurrently queries **Qdrant Cloud Hybrid Search**, **Open-Meteo** (live rainfall deficit & drought triggers), and **OpenStreetMap Overpass** (nearest Common Service Center / Jan Seva Kendra / Maha E-Seva Kendra) via `asyncio.gather`.
 4. **Grounded LCEL Adjudication:** LangChain structured output chain (Gemini 2.5 Flash) strictly citing official Government Resolutions (GRs).
 5. **Synchronized Regional Audio Playback:** Real-time audio scrub bar synchronized with HTML5 audio events and 60 FPS requestAnimationFrame, paired with an interactive 3-document checklist and clickable Google Maps navigation.
-6. **Mobile-First Responsive Interface:** Built with dynamic viewport height (`100dvh`), sub-tab mobile switching between Citizen Chat and CSC Telemetry, ensuring complete accessibility on devices ranging from compact phones (iPhone SE) to desktop workstations.
+6. **Mobile-First Responsive Interface:** Built with dynamic viewport height (`100dvh`), sub-tab mobile switching between Citizen Chat and CSC Telemetry, ensuring complete accessibility on devices ranging from compact phones to desktop workstations.
 
 ---
 
@@ -79,15 +93,17 @@ A web-based Digital Public Infrastructure (DPI) conversational voice platform po
 ```
 policySetuAi/
 ├── .env.example             # Clean template with instructions for all free API keys
-├── .env                     # Active configuration (fill in your keys)
+├── .env                     # Active environment configuration
 ├── Dockerfile               # Production container with system ffmpeg
 ├── docker-compose.yml       # Unified containerized deployment
+├── render.yaml              # Render Cloud infrastructure blueprint
 ├── requirements.txt         # Production-locked Python dependencies
-├── README.md                # Master documentation & defense cheat sheet
+├── README.md                # Master documentation
+├── LICENSE                  # Open source license
 │
 ├── app/                     # Core FastAPI Backend
 │   ├── __init__.py          # Application package initialization
-│   ├── main.py              # Entrypoint, /api/query, /api/voice-upload, /api/health, /api/telemetry, static SPA serving
+│   ├── main.py              # Entrypoint: /api/query, /api/voice-upload, /health, /telemetry, static SPA serving
 │   ├── config.py            # Typed Pydantic Settings & environment validation
 │   ├── ingest_service.py    # Table-preserving markdown extraction & Qdrant upsert engine
 │   ├── unit_converter.py    # Deterministic Acre / Guntha / Bigha / Cent -> Hectare math
@@ -97,19 +113,22 @@ policySetuAi/
 │   └── db_session.py        # Supabase 24h memory + telemetry (with local SQLite fallback)
 │
 ├── frontend/                # React 19 + TypeScript + Vite + Tailwind CSS Application
+│   ├── dist/                # Pre-built production SPA bundle served directly by FastAPI
 │   ├── src/
 │   │   ├── components/      # Modular UI Components
-│   │   │   ├── CitizenVoiceMirror.tsx   # Vernacular chat console, audio player, & history
-│   │   │   ├── CSCMapCard.tsx           # Nearest CSC locator with OpenStreetMap iframe
-│   │   │   ├── TelemetryCard.tsx        # Agro-weather deficit metrics & trigger indicators
-│   │   │   ├── MandateIngestionView.tsx # Live Mandate Ingestion & Qdrant Indexer
-│   │   │   ├── MarkdownTableRenderer.tsx# Markdown Table Visualizer
-│   │   │   └── Navbar.tsx               # DPI Tricolor header & responsive navigation
-│   │   ├── services/api.ts  # REST client for FastAPI backend with blob URL handling
-│   │   ├── types/index.ts   # Canonical TypeScript data contracts
+│   │   │   ├── CitizenVoiceMirror.tsx   # Vernacular voice chat console, audio player, & history
+│   │   │   ├── CSCMapCard.tsx           # Nearest CSC locator with OpenStreetMap navigation
+│   │   │   ├── TelemetryCard.tsx        # Agro-weather deficit metrics & drought triggers
+│   │   │   ├── Navbar.tsx               # DPI Tricolor header & live engine status indicator
+│   │   │   └── index.ts                 # Clean component barrel exports
+│   │   ├── services/
+│   │   │   └── api.ts       # REST client for FastAPI backend with blob audio handling
+│   │   ├── types/
+│   │   │   └── index.ts     # Canonical TypeScript data contracts (CitizenProfile, SchemeVerdict, etc.)
 │   │   ├── App.tsx          # Root container with 100dvh mobile fit & sub-tab switcher
-│   │   └── index.css        # Tricolor styling & custom keyframe animations
-│   ├── vite.config.ts       # Reverse proxy to FastAPI port 8000
+│   │   ├── index.css        # Tricolor styling & custom keyframe animations
+│   │   └── main.tsx         # React root entry point
+│   ├── vite.config.ts       # Vite configuration with local proxy to backend port 8000
 │   └── package.json         # React 19, Lucide, Tailwind CSS dependencies
 │
 ├── ingestion/               # Government Mandate Ingestion Pipeline
@@ -121,23 +140,28 @@ policySetuAi/
 ├── tests/                   # Verification Test Suite
 │   ├── __init__.py          # Test package initialization
 │   ├── test_pipeline.py     # Subsystem unit tests
-│   └── test_website_api.py  # End-to-end multi-state web query tests (Gujarat & Maharashtra)
+│   ├── test_website_api.py  # End-to-end multi-state web query tests (Gujarat & Maharashtra)
+│   ├── test_fast_adjudicate.py # Adjudication speed test
+│   └── test_multistate_multilingual.py # Multi-state dialect tests
 │
-└── data/                    # Storage (telemetry.db, audio cache, documents)
+└── data/                    # Storage (conversations.db, telemetry.db, audio cache, documents)
+    ├── audio/               # Cached vernacular audio voice notes
+    ├── documents/           # Official State GRs & Markdown scheme files
+    └── storage/             # Persistent local artifacts
 ```
 
 ---
 
-## 🛡️ Hackathon Rule Compliance & Defense Sheet
+## ⚙️ Technical Highlights & Architecture Design
 
-### Rule 4 & 7a: "No Dummy Data" Enforcement
+### 🌐 Live Backends & Real-Time Data Pipeline
 * **Zero Mock Datasets:** The application connects exclusively to live backends:
   - **Open-Meteo API:** Live meteorological readings (rainfall mm, 10-day deficit, drought indicator) for the citizen's exact village/taluka. (100% free, zero key required).
   - **OpenStreetMap Nominatim + Overpass API:** Live geospatial query locating real Common Service Centres (CSC), Maha E-Seva Kendras, and Tehsildar offices with live coordinates and Google Maps navigation links. (100% free, zero key required).
   - **Data.gov.in REST API:** Official Government of India open data catalog for district agriculture statistics.
   - **Qdrant Vector DB:** Indexed directly from official state Government Resolutions (e.g. Gujarat MMKSY and Maharashtra SDRF drought relief packages).
 
-### Rule 6: Code Ownership & Explainability
+### 🧠 Deterministic Adjudication & Grounded Logic
 * **No Complex Autonomous Loops:** Multi-agent cyclic graphs introduce non-deterministic loops and high latency.
 * **Deterministic LangChain LCEL:** Linear, typed pipe (`|`) chains:
   - `profile_prompt | llm.with_structured_output(CitizenProfile)`
@@ -150,7 +174,7 @@ policySetuAi/
 
 ---
 
-## ⚡ Zero-Cost Hackathon Setup Guide (₹0 Budget)
+## ⚡ Zero-Cost Infrastructure Setup Guide (₹0 Budget)
 
 | Layer | Recommended Tool | Cost | Free Allowance / Fallback |
 |---|---|---|---|
@@ -200,7 +224,7 @@ python tests/test_website_api.py
    npm install
    npm run dev
    ```
-   Open `http://localhost:5173` in your browser.
+   Open `http://localhost:3000` in your browser.
 
 #### Production Unified Mode (FastAPI Directly Serving Built React SPA)
 ```bash
