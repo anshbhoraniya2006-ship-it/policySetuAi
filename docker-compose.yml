@@ -13,18 +13,3 @@ services:
       - ./data:/app/data
       - .:/app
     restart: unless-stopped
-
-  dashboard:
-    build: .
-    container_name: policysetu_dashboard
-    command: streamlit run dashboard/monitor.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
-    ports:
-      - "8501:8501"
-    env_file:
-      - .env
-    volumes:
-      - ./data:/app/data
-      - .:/app
-    depends_on:
-      - api
-    restart: unless-stopped

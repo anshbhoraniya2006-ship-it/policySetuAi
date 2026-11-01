@@ -30,9 +30,3 @@ pymupdf4llm>=0.0.14
 
 # Database & Telemetry Storage
 supabase>=2.5.1
-
-# Transparency Dashboard & GIS Visualization
-streamlit>=1.36.0
-streamlit-autorefresh>=1.0.1
-folium>=0.17.0
-streamlit-folium>=0.20.0
