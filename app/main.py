@@ -15,7 +15,8 @@ import logging
 import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
-from fastapi import FastAPI, Form, File, UploadFile, BackgroundTasks, Request, Response
+from fastapi import FastAPI, Form, File, UploadFile, BackgroundTasks, Request, Response, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -63,6 +64,11 @@ app.add_middleware(
 # Mount local audio directory for direct playback
 # Mount local audio directory for direct playback
 app.mount("/static/audio", StaticFiles(directory=str(settings.AUDIO_DIR)), name="static_audio")
+
+# Mount built React frontend assets if present
+FRONTEND_DIST = settings.BASE_DIR / "frontend" / "dist"
+if FRONTEND_DIST.exists() and (FRONTEND_DIST / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="frontend_assets")
 
 
 @app.on_event("startup")
@@ -486,17 +492,25 @@ async def adjudicate_fast_whatsapp(
 
     query_text = native_transcript if native_transcript else (english_query if english_query else "I have 2 acres of land. Am I eligible for disaster relief?")
 
-    # 1. Multi-Lingual Auto-Detection & Translation
+    # 1. Multi-Lingual Auto-Detection & Session Context
+    prior_history = await get_session_history(sender_phone)
     if not media_url:
         detected_lang = detect_text_language(query_text)
-        if detected_lang not in ("en-IN", "en"):
-            english_query = await translate_to_english(query_text, detected_lang)
-        else:
-            english_query = query_text
+    
+    # 2. Ultra-Fast Sub-Millisecond Profile Extraction
+    from app.rag_chains import fast_extract_citizen_profile
+    profile = fast_extract_citizen_profile(query_text, prior_history)
 
-    # 2. Profile Extraction with State Knowledge
-    prior_history = await get_session_history(sender_phone)
-    profile = await extract_citizen_profile(english_query, prior_history)
+    # If critical details missing from rule-based check, try LLM chain with strict 1.5s timeout
+    if profile.land_value is None or not profile.district_or_village:
+        try:
+            if not media_url and detected_lang not in ("en-IN", "en"):
+                english_query = await asyncio.wait_for(translate_to_english(query_text, detected_lang), timeout=1.2)
+            else:
+                english_query = query_text
+            profile = await asyncio.wait_for(extract_citizen_profile(english_query, prior_history), timeout=1.8)
+        except Exception as e:
+            logger.debug(f"LLM profile extraction timeout/fallback: {e}")
 
     # Refine language if state hint is available
     if profile.state:
@@ -540,7 +554,7 @@ async def adjudicate_fast_whatsapp(
     # 5. Live Agro Weather (bounded with 1.0s timeout)
     try:
         weather_task = fetch_live_agro_weather(c_lat, c_lon, district)
-        weather = await asyncio.wait_for(weather_task, timeout=0.8)
+        weather = await asyncio.wait_for(weather_task, timeout=0.4)
     except Exception:
         weather = {"recent_rainfall_10d_mm": 12.0, "rainfall_deficit_percentage": 65.0}
 
@@ -584,7 +598,7 @@ Include:
 Keep it clean, well-spaced, and easy to read on mobile.
 """
     try:
-        res = await asyncio.wait_for(llm.ainvoke(system_prompt), timeout=4.0)
+        res = await asyncio.wait_for(llm.ainvoke(system_prompt), timeout=1.8)
         raw_content = res.content
         if isinstance(raw_content, list):
             reply_text = "".join([c.get("text", "") if isinstance(c, dict) else str(c) for c in raw_content])
@@ -729,14 +743,16 @@ async def get_latest_telemetry(limit: int = 10):
 
 @app.get("/")
 async def root():
-    """Root endpoint welcoming users and pointing to health & interactive OpenAPI docs."""
+    """Serves the PolicySetu AI Command Center frontend if built, or JSON status."""
+    index_file = FRONTEND_DIST / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
     return {
         "service": "PolicySetu AI - Multilingual Policy & Scheme Explainer API",
         "version": "2.0.0",
         "status": "ONLINE",
         "documentation": "/docs",
-        "health": "/health",
-        "frontend_command_center": "http://localhost:3000"
+        "health": "/health"
     }
 
 
@@ -814,6 +830,29 @@ async def ingest_pdf_endpoint(
         scheme_name=scheme_name
     )
     return res
+
+
+@app.get("/{full_path:path}")
+async def serve_frontend_spa(full_path: str):
+    """Fallback handler for Single Page Application client-side routing & static assets."""
+    reserved = (
+        "api", "health", "docs", "redoc", "openapi.json",
+        "webhook", "whatsap", "test-voice", "test-voice-upload",
+        "static", "assets"
+    )
+    first_segment = full_path.split("/")[0].lower() if full_path else ""
+    if first_segment in reserved:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    file_path = FRONTEND_DIST / full_path
+    if full_path and file_path.is_file():
+        return FileResponse(file_path)
+
+    index_file = FRONTEND_DIST / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+
+    raise HTTPException(status_code=404, detail="Not Found")
 
 
 if __name__ == "__main__":
