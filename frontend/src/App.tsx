@@ -11,6 +11,7 @@ import { fetchHealth, fetchLatestTelemetry } from './services';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<'console' | 'ingestion'>('console');
+  const [mobileConsoleTab, setMobileConsoleTab] = useState<'chat' | 'telemetry'>('chat');
   const [currentEvent, setCurrentEvent] = useState<TelemetryEvent | null>(null);
   const [health, setHealth] = useState<SystemHealth | null>(null);
   const [isLiveConnected, setIsLiveConnected] = useState<boolean>(false);
@@ -62,8 +63,8 @@ export function App() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50 overflow-hidden selection:bg-orange-100 selection:text-orange-900">
-      {/* Top Navbar (Fixed 67px height: 64px + 3px hairline) */}
+    <div className="h-[100dvh] max-h-[100dvh] flex flex-col bg-slate-50 overflow-hidden selection:bg-orange-100 selection:text-orange-900">
+      {/* Top Navbar */}
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -72,44 +73,96 @@ export function App() {
       />
 
       {/* Main Workspace (Strictly fills exactly remaining height without any window scrollbar) */}
-      <main className="flex-1 h-[calc(100vh-67px)] w-full max-w-[1800px] mx-auto p-2.5 sm:p-3 lg:p-4 overflow-y-auto lg:overflow-hidden flex flex-col min-h-0">
+      <main className="flex-1 min-h-0 w-full max-w-[1800px] mx-auto p-1.5 sm:p-2.5 lg:p-4 flex flex-col overflow-hidden">
         {activeTab === 'console' ? (
-          /* Strict 3-Tier Responsive Layout:
-             1. Mobile (< 768px): Vertical stack; chat takes full screen, cards scroll below
-             2. Tablet (768px - 1023px): Chat spans 100% width; CSC & Telemetry cards side-by-side in 2-cols below
-             3. Laptop/Desktop (>= 1024px): Exact screen height with ZERO right-side or page scrollbars
-          */
-          <div className="h-full flex-1 min-h-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-3 lg:gap-4 overflow-y-auto lg:overflow-hidden items-stretch">
-            {/* Left Column: WhatsApp-Style Citizen Voice Mirror */}
-            <div className="col-span-1 md:col-span-2 lg:col-span-8 h-[calc(100dvh-5.5rem)] md:h-[620px] lg:h-full min-h-0 flex flex-col overflow-hidden">
-              <CitizenVoiceMirror
-                currentEvent={currentEvent}
-                onQueryExecuted={(event) => setCurrentEvent(event)}
-                isLoading={isLoading}
-                setIsLoading={setIsLoading}
-                onResetSession={handleResetSession}
-              />
+          <div className="h-full flex-1 min-h-0 flex flex-col overflow-hidden">
+            {/* Mobile Sub-Tab Switcher (< lg only) */}
+            <div className="flex lg:hidden items-center bg-slate-200/90 p-1 rounded-xl mb-1.5 shrink-0 border border-slate-300/80">
+              <button
+                type="button"
+                onClick={() => setMobileConsoleTab('chat')}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  mobileConsoleTab === 'chat'
+                    ? 'bg-white text-blue-950 shadow-xs border border-slate-200'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>🎙️ Citizen Chat</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobileConsoleTab('telemetry')}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  mobileConsoleTab === 'telemetry'
+                    ? 'bg-white text-blue-950 shadow-xs border border-slate-200'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>📍 CSC Map &amp; Telemetry</span>
+                {currentEvent?.csc_center && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                )}
+              </button>
             </div>
 
-            {/* Right Column: Exactly fits remaining vertical space; NEVER triggers a scrollbar */}
-            <div className="col-span-1 md:col-span-2 lg:col-span-4 h-auto lg:h-full min-h-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3 overflow-hidden">
-              {/* Card 1: Nearest CSC Locator (flex-1) */}
-              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                <CSCMapCard
-                  csc={currentEvent?.csc_center}
-                  citizenProfile={currentEvent?.citizen_profile}
+            {/* Main Console Layout: Side-by-side on lg+, Sub-tabbed on mobile */}
+            <div className="flex-1 min-h-0 h-full grid grid-cols-1 lg:grid-cols-12 gap-3 lg:gap-4 overflow-hidden items-stretch">
+              {/* Left Column: WhatsApp-Style Citizen Voice Mirror */}
+              <div
+                className={`col-span-1 lg:col-span-8 h-full min-h-0 flex-col overflow-hidden ${
+                  mobileConsoleTab === 'chat' ? 'flex' : 'hidden lg:flex'
+                }`}
+              >
+                <CitizenVoiceMirror
+                  currentEvent={currentEvent}
+                  onQueryExecuted={(event) => setCurrentEvent(event)}
                   isLoading={isLoading}
+                  setIsLoading={setIsLoading}
+                  onResetSession={handleResetSession}
+                  onViewTelemetry={() => setMobileConsoleTab('telemetry')}
                 />
               </div>
 
-              {/* Card 2: Agro-Weather Telemetry (flex-1) */}
-              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                <TelemetryCard
-                  weather={currentEvent?.weather_data}
-                  verdict={currentEvent?.verdict}
-                  citizenProfile={currentEvent?.citizen_profile}
-                  isLoading={isLoading}
-                />
+              {/* Right Column: Nearest CSC Locator & Agro-Weather Telemetry */}
+              <div
+                className={`col-span-1 lg:col-span-4 h-full min-h-0 overflow-y-auto lg:overflow-hidden ${
+                  mobileConsoleTab === 'telemetry'
+                    ? 'flex flex-col gap-3'
+                    : 'hidden lg:grid lg:grid-cols-1 lg:gap-3'
+                }`}
+              >
+                {/* Mobile Back-to-Chat Button */}
+                <div className="lg:hidden flex items-center justify-between pb-0.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setMobileConsoleTab('chat')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-blue-900 shadow-2xs hover:bg-slate-50 active:scale-95 cursor-pointer"
+                  >
+                    <span>← Back to Voice Chat</span>
+                  </button>
+                  <span className="text-[11px] font-semibold text-slate-500">
+                    {currentEvent?.citizen_profile?.district_or_village || 'District Level Telemetry'}
+                  </span>
+                </div>
+
+                {/* Card 1: Nearest CSC Locator (flex-1) */}
+                <div className="flex-1 min-h-[220px] lg:min-h-0 flex flex-col overflow-hidden">
+                  <CSCMapCard
+                    csc={currentEvent?.csc_center}
+                    citizenProfile={currentEvent?.citizen_profile}
+                    isLoading={isLoading}
+                  />
+                </div>
+
+                {/* Card 2: Agro-Weather Telemetry (flex-1) */}
+                <div className="flex-1 min-h-[220px] lg:min-h-0 flex flex-col overflow-hidden">
+                  <TelemetryCard
+                    weather={currentEvent?.weather_data}
+                    verdict={currentEvent?.verdict}
+                    citizenProfile={currentEvent?.citizen_profile}
+                    isLoading={isLoading}
+                  />
+                </div>
               </div>
             </div>
           </div>

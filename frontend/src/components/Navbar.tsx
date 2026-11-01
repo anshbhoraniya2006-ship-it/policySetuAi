@@ -1,11 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Radio,
   Database,
-  Check,
-  Copy,
-  ExternalLink,
-  X,
   Activity
 } from 'lucide-react';
 import type { SystemHealth } from '../types';
@@ -23,20 +19,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   health,
   isLiveConnected,
 }) => {
-  const [showSandboxModal, setShowSandboxModal] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const sandboxNumber = '+1 (737) 250-8034';
-  const rawSandboxNumber = '17372508034';
-  const joinPhrase = 'join twilio-trial';
-  const whatsappDeepLink = `https://wa.me/${rawSandboxNumber}?text=${encodeURIComponent(joinPhrase)}`;
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(joinPhrase);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   return (
     <>
       {/* Top Navigation Bar with DPI Tricolor Hairline */}
@@ -44,11 +26,11 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* India DPI Tricolor Top Accent */}
         <div className="dpi-tricolor-hairline" />
 
-        <div className="max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
+        <div className="max-w-[1720px] mx-auto px-3 sm:px-6 lg:px-8 h-13 sm:h-16 flex items-center justify-between gap-2 sm:gap-3">
           {/* Left: Brand Identity with Sovereign DPI Hub SVG */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-900 to-blue-950 flex items-center justify-center shrink-0 shadow-md shadow-blue-950/20 border border-white/15 transition-transform hover:scale-105">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-slate-900 to-blue-950 flex items-center justify-center shrink-0 shadow-md shadow-blue-950/20 border border-white/15 transition-transform hover:scale-105">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="sm:w-[22px] sm:h-[22px]">
                 {/* Saffron Upper Arc */}
                 <path
                   d="M12 3 A9 9 0 0 1 21 12"
@@ -87,11 +69,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               </svg>
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <h1 className="text-sm sm:text-lg font-extrabold text-slate-900 tracking-tight">
                   Policy-Setu <span className="text-blue-900">AI</span>
                 </h1>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                <span className="inline-flex items-center gap-1 sm:gap-1.5 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                   DPI Regional Voice
                 </span>
@@ -103,32 +85,32 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Center: View Switcher Tabs */}
-          <div className="hidden md:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+          <div className="hidden md:flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200">
             <button
               onClick={() => setActiveTab('console')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
                 activeTab === 'console'
-                  ? 'bg-white text-blue-900 shadow-xs'
+                  ? 'bg-white text-blue-950 shadow-xs border border-slate-200/80'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <Radio className="w-3.5 h-3.5 text-blue-800" />
-              <span>Command Center</span>
+              <span>Voice &amp; Scheme Console</span>
             </button>
             <button
               onClick={() => setActiveTab('ingestion')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
                 activeTab === 'ingestion'
-                  ? 'bg-white text-blue-900 shadow-xs'
+                  ? 'bg-white text-blue-950 shadow-xs border border-slate-200/80'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <Database className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Mandate Ingestion &amp; Qdrant Indexer</span>
+              <span>Mandate Ingestion &amp; Qdrant</span>
             </button>
           </div>
 
-          {/* Right: Live Status & WhatsApp Join Action */}
+          {/* Right: Live Status & Engine Connection */}
           <div className="flex items-center gap-2.5">
             {/* System Health Status */}
             {health && (
@@ -141,7 +123,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             )}
 
-            {/* Live Webhook Status Pill */}
+            {/* Live Web Engine Status Pill */}
             <div
               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
                 isLiveConnected
@@ -154,127 +136,38 @@ export const Navbar: React.FC<NavbarProps> = ({
                   isLiveConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
                 }`}
               />
-              <span className="hidden sm:inline">Live Voice Webhook</span>
-              <span className="sm:hidden">Live</span>
+              <span className="hidden sm:inline">Voice Engine Active</span>
+              <span className="sm:hidden">Active</span>
             </div>
-
-            {/* Join WhatsApp Button */}
-            <button
-              onClick={() => setShowSandboxModal(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all hover:scale-[1.02] active:scale-95"
-            >
-              <span>💬</span>
-              <span>Join WhatsApp</span>
-            </button>
           </div>
         </div>
 
         {/* Mobile View Switcher Tabs Bar */}
-        <div className="flex md:hidden border-t border-slate-200 bg-slate-50 px-4 py-2 items-center justify-center gap-2">
+        <div className="flex md:hidden border-t border-slate-200 bg-slate-50 px-3 py-1.5 items-center justify-center gap-2">
           <button
             onClick={() => setActiveTab('console')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold ${
+            className={`flex-1 flex items-center justify-center gap-1.5 py-1 rounded-lg text-xs font-semibold ${
               activeTab === 'console'
                 ? 'bg-white text-blue-900 shadow-xs border border-slate-200'
                 : 'text-slate-600'
             }`}
           >
             <Radio className="w-3.5 h-3.5 text-blue-800" />
-            <span>Command Center</span>
+            <span>Voice Console</span>
           </button>
           <button
             onClick={() => setActiveTab('ingestion')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold ${
+            className={`flex-1 flex items-center justify-center gap-1.5 py-1 rounded-lg text-xs font-semibold ${
               activeTab === 'ingestion'
                 ? 'bg-white text-blue-900 shadow-xs border border-slate-200'
                 : 'text-slate-600'
             }`}
           >
             <Database className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Ingestion &amp; Indexer</span>
+            <span>Ingestion</span>
           </button>
         </div>
       </header>
-
-      {/* WhatsApp Sandbox Modal */}
-      {showSandboxModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 relative">
-            <button
-              onClick={() => setShowSandboxModal(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="text-center mb-5">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center mx-auto mb-3 text-2xl shadow-xs">
-                💬
-              </div>
-              <h3 className="text-base font-bold text-slate-900">
-                Join Policy-Setu WhatsApp Channel
-              </h3>
-              <p className="text-xs text-slate-500 mt-1">
-                Experience vernacular voice query resolution live from your mobile device
-              </p>
-            </div>
-
-            <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200 mb-5 text-xs">
-              <div>
-                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                  Step 1: Save or Open Number
-                </span>
-                <p className="font-mono font-bold text-slate-900 text-sm mt-0.5">
-                  {sandboxNumber}
-                </p>
-              </div>
-
-              <div>
-                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                  Step 2: Send Activation Code
-                </span>
-                <div className="flex items-center justify-between mt-1 bg-white p-2 rounded-lg border border-slate-200">
-                  <span className="font-mono font-bold text-emerald-700">{joinPhrase}</span>
-                  <button
-                    onClick={handleCopy}
-                    className="flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900 px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200"
-                  >
-                    {copied ? (
-                      <>
-                        <Check className="w-3 h-3 text-emerald-600" />
-                        <span>Copied</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3 h-3" />
-                        <span>Copy</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <a
-                href={whatsappDeepLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs"
-              >
-                <span>Open in WhatsApp</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-              <button
-                onClick={() => setShowSandboxModal(false)}
-                className="py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 };
