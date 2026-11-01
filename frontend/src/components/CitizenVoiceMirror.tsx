@@ -15,7 +15,7 @@ import {
   FileCheck,
 } from 'lucide-react';
 import type { TelemetryEvent, CSCLocation, WeatherData } from '../types';
-import { submitTextQuery, submitVoiceUpload, resolveAudioUrl } from '../services/api';
+import { submitTextQuery, submitVoiceUpload, resolveAudioUrl, resetDeviceSession } from '../services/api';
 
 // Format seconds into M:SS
 const formatTime = (seconds: number): string => {
@@ -422,7 +422,15 @@ export const CitizenVoiceMirror: React.FC<CitizenVoiceMirrorProps> = ({
   onResetSession,
   onViewTelemetry,
 }) => {
-  const [history, setHistory] = useState<ChatTurn[]>([]);
+  // Load this device's own chat history from sessionStorage
+  const [history, setHistory] = useState<ChatTurn[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const stored = sessionStorage.getItem('policysetu_device_chat_turns');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return [];
+  });
   const [voiceEnabled, setVoiceEnabled] = useState<boolean>(true);
   const [inputText, setInputText] = useState<string>('');
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -438,7 +446,18 @@ export const CitizenVoiceMirror: React.FC<CitizenVoiceMirrorProps> = ({
   const recordingSecondsRef = useRef<number>(0);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
-  // Initialize history if empty and currentEvent exists from server
+  // Sync this device's history to sessionStorage
+  useEffect(() => {
+    try {
+      if (history.length > 0) {
+        sessionStorage.setItem('policysetu_device_chat_turns', JSON.stringify(history));
+      } else {
+        sessionStorage.removeItem('policysetu_device_chat_turns');
+      }
+    } catch {}
+  }, [history]);
+
+  // Initialize history if empty and currentEvent exists from server for this device
   useEffect(() => {
     if (currentEvent && history.length === 0) {
       setHistory([eventToChatTurn(currentEvent)]);
@@ -619,14 +638,18 @@ export const CitizenVoiceMirror: React.FC<CitizenVoiceMirrorProps> = ({
     }
   };
 
-  // Reset Session
-  const handleReset = () => {
+  // Reset Session for this device
+  const handleReset = async () => {
     setInputText('');
     setErrorMessage(null);
     setHistory([]);
+    try {
+      sessionStorage.removeItem('policysetu_device_chat_turns');
+    } catch {}
     window.dispatchEvent(
       new CustomEvent('policysetu:pause_other_audio', { detail: 'all' })
     );
+    await resetDeviceSession();
     onResetSession();
   };
 

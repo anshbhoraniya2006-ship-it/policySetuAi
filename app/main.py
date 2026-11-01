@@ -414,10 +414,21 @@ async def test_voice_upload_endpoint(
 
 
 @app.get("/api/telemetry/latest")
-async def get_latest_telemetry(limit: int = 10):
-    """Returns latest telemetry logs for the citizen mirror and judge monitor."""
-    logs = get_latest_telemetry_logs(limit=limit)
+async def get_latest_telemetry(limit: int = 10, phone_number: Optional[str] = None):
+    """Returns latest telemetry logs, optionally filtered by device/phone."""
+    logs = get_latest_telemetry_logs(limit=limit, phone_number=phone_number)
     return {"count": len(logs), "logs": logs}
+
+
+class ResetSessionRequest(BaseModel):
+    phone_number: str = "web_citizen"
+
+
+@app.post("/api/session/reset")
+async def reset_session_endpoint(payload: ResetSessionRequest):
+    """Clears multi-turn conversation memory for a specific device or phone number."""
+    await clear_session_history(payload.phone_number)
+    return {"status": "SUCCESS", "message": f"Session cleared for {payload.phone_number}"}
 
 
 @app.get("/")

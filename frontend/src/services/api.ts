@@ -68,8 +68,26 @@ export async function ingestPdf(
   return res.json();
 }
 
-export async function fetchLatestTelemetry(limit = 10): Promise<{ count: number; logs: TelemetryEvent[] }> {
-  const res = await fetch(`${API_BASE_URL}/api/telemetry/latest?limit=${limit}`);
+export function getDeviceId(): string {
+  if (typeof window === 'undefined') return 'device_default';
+  try {
+    let id = localStorage.getItem('policysetu_device_id');
+    if (!id) {
+      id = 'dev_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now().toString(36);
+      localStorage.setItem('policysetu_device_id', id);
+    }
+    return id;
+  } catch {
+    return 'device_fallback';
+  }
+}
+
+export async function fetchLatestTelemetry(
+  limit = 10,
+  deviceSpecific = true
+): Promise<{ count: number; logs: TelemetryEvent[] }> {
+  const deviceParam = deviceSpecific ? `&phone_number=${encodeURIComponent(getDeviceId())}` : '';
+  const res = await fetch(`${API_BASE_URL}/api/telemetry/latest?limit=${limit}${deviceParam}`);
   if (!res.ok) {
     throw new Error(`Failed to fetch telemetry: ${res.statusText}`);
   }
@@ -85,10 +103,11 @@ export async function fetchLatestTelemetry(limit = 10): Promise<{ count: number;
 
 export async function submitTextQuery(
   queryText: string,
-  phoneNumber = 'web_citizen',
+  phoneNumber?: string,
   latitude?: number,
   longitude?: number
 ): Promise<TelemetryEvent> {
+  const id = phoneNumber || getDeviceId();
   const res = await fetch(`${API_BASE_URL}/test-voice`, {
     method: 'POST',
     headers: {
@@ -96,7 +115,7 @@ export async function submitTextQuery(
     },
     body: JSON.stringify({
       query_text: queryText,
-      phone_number: phoneNumber,
+      phone_number: id,
       latitude: latitude || null,
       longitude: longitude || null,
     }),
@@ -110,8 +129,9 @@ export async function submitTextQuery(
 
 export async function submitVoiceUpload(
   audioBlob: Blob,
-  phoneNumber = 'web_citizen'
+  phoneNumber?: string
 ): Promise<TelemetryEvent> {
+  const id = phoneNumber || getDeviceId();
   const formData = new FormData();
   const ext = audioBlob.type.includes('webm')
     ? 'webm'
@@ -121,7 +141,7 @@ export async function submitVoiceUpload(
     ? 'mp4'
     : 'wav';
   formData.append('file', audioBlob, `mic_recording.${ext}`);
-  formData.append('phone_number', phoneNumber);
+  formData.append('phone_number', id);
 
   const res = await fetch(`${API_BASE_URL}/test-voice-upload`, {
     method: 'POST',
@@ -132,6 +152,21 @@ export async function submitVoiceUpload(
     throw new Error(`Voice upload failed: ${res.statusText}`);
   }
   return res.json();
+}
+
+export async function resetDeviceSession(): Promise<void> {
+  const id = getDeviceId();
+  try {
+    await fetch(`${API_BASE_URL}/api/session/reset`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ phone_number: id }),
+    });
+  } catch (err) {
+    console.warn('Failed to reset session on server:', err);
+  }
 }
 
 export function resolveAudioUrl(urlPath?: string): string {

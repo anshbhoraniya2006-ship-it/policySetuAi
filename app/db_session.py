@@ -325,15 +325,20 @@ async def log_telemetry_event(payload: Dict[str, Any]):
         logger.error(f"SQLite telemetry insert failed: {e}")
 
 
-def get_latest_telemetry_logs(limit: int = 15) -> List[Dict[str, Any]]:
-    """Fetches the latest execution logs from SQLite for the Judge dashboard."""
+def get_latest_telemetry_logs(limit: int = 15, phone_number: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Fetches the latest execution logs from SQLite, optionally filtered by phone_number / device_id."""
     try:
         conn = sqlite3.connect(str(settings.SQLITE_DB_PATH))
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT * FROM telemetry_logs ORDER BY id DESC LIMIT ?", (limit,)
-        )
+        if phone_number:
+            cursor.execute(
+                "SELECT * FROM telemetry_logs WHERE phone_number = ? ORDER BY id DESC LIMIT ?", (phone_number, limit)
+            )
+        else:
+            cursor.execute(
+                "SELECT * FROM telemetry_logs ORDER BY id DESC LIMIT ?", (limit,)
+            )
         rows = cursor.fetchall()
         conn.close()
 
