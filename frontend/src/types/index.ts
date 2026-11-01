@@ -46,7 +46,7 @@ export interface SchemeVerdict {
   confidence_score?: number;
   entitlement_summary: string;
   exact_three_documents: string[];
-  local_language_script: string;
+  local_language_script?: string;
   english_voice_script: string;
   source_citation: string;
   verification_hash?: string;
@@ -68,7 +68,7 @@ export interface TelemetryEvent {
   verdict: SchemeVerdict;
   outbound_audio_url?: string;
   total_latency_ms: number;
-  status: "SUCCESS" | "FAILED" | "PENDING";
+  status: "SUCCESS" | "FAILED" | "PENDING" | "FOLLOW_UP_REQUESTED" | "AWAITING_FOLLOW_UP";
   timestamp?: string;
 }
 
@@ -76,7 +76,7 @@ export interface SystemHealth {
   status: string;
   timestamp: number;
   services: {
-    twilio_configured: boolean;
+    twilio_configured?: boolean;
     sarvam_configured: boolean;
     gemini_configured: boolean;
     qdrant_configured: boolean;

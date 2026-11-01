@@ -4,8 +4,8 @@
 
 export { Navbar } from './Navbar';
 export { CitizenVoiceMirror } from './CitizenVoiceMirror';
-export { RAGPipelineInspector } from './RAGPipelineInspector';
+export { CSCMapCard } from './CSCMapCard';
+export { TelemetryCard } from './TelemetryCard';
 export { LiveProofAndGIS } from './LiveProofAndGIS';
 export { MandateIngestionView } from './MandateIngestionView';
 export { MarkdownTableRenderer } from './MarkdownTableRenderer';
-

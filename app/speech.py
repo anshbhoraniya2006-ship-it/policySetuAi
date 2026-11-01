@@ -158,21 +158,6 @@ def detect_text_language(text: str, state_hint: Optional[str] = None) -> str:
     return "en-IN"
 
 
-async def download_audio_from_twilio(media_url: str) -> bytes:
-    """
-    Downloads recorded WhatsApp voice note (.ogg/.amr) from Twilio MediaUrl0
-    using Twilio Basic Authentication.
-    """
-    auth = None
-    if settings.is_twilio_configured():
-        auth = (settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-
-    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-        res = await client.get(media_url, auth=auth)
-        res.raise_for_status()
-        return res.content
-
-
 async def transcribe_with_gemini(
     audio_bytes: bytes,
     filename: str = "voice.mp3"

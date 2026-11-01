@@ -19,11 +19,6 @@ class Settings(BaseSettings):
     BASE_PUBLIC_URL: str = "http://localhost:8000"
     ENVIRONMENT: str = "development"
 
-    # --- WhatsApp Gateway (Twilio) ---
-    TWILIO_ACCOUNT_SID: Optional[str] = None
-    TWILIO_AUTH_TOKEN: Optional[str] = None
-    TWILIO_WHATSAPP_NUMBER: str = "whatsapp:+17372508034"
-
     # --- Indic Speech & Translation (Sarvam AI) ---
     SARVAM_API_KEY: Optional[str] = None
     SARVAM_API_BASE_URL: str = "https://api.sarvam.ai"
@@ -57,9 +52,6 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"
     )
-
-    def is_twilio_configured(self) -> bool:
-        return bool(self.TWILIO_ACCOUNT_SID and self.TWILIO_AUTH_TOKEN)
 
     def is_sarvam_configured(self) -> bool:
         return bool(self.SARVAM_API_KEY and self.SARVAM_API_KEY.strip())
